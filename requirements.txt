@@ -1,0 +1,35 @@
+# VerseListener – Python dependencies
+# Install with:  pip install -r requirements.txt
+
+# ── Core UI ───────────────────────────────────────────────────────────────────
+PyQt6>=6.4.0
+python-dotenv>=1.0.1
+
+# ── Audio backends (at least one required) ────────────────────────────────────
+# Option A: JACK (Linux – preferred for church AV setups)
+# jack>=0.4.0            # Python JACK client
+#
+# Option B: sounddevice (works with ALSA, PulseAudio, JACK on Linux; WASAPI on Windows)
+# Linux note: requires the system PortAudio library (for example `libportaudio2`)
+sounddevice>=0.4.6
+numpy>=1.24.0
+
+# ── Speech-to-Text (choose one or both) ──────────────────────────────────────
+# Option A: faster-whisper (recommended – offline, fast, accurate)
+faster-whisper>=1.0.0
+
+# Option B: Vosk (lower CPU, requires separate model download)
+# vosk>=0.3.45
+
+# Option C: OpenAI Realtime transcription
+websocket-client>=1.8.0
+
+# ── EasyWorship automation ────────────────────────────────────────────────────
+pyautogui>=0.9.54
+# Window management backends
+pygetwindow>=0.0.9       # preferred on Windows/macOS; safely skipped when unsupported
+
+# ── Optional extras ───────────────────────────────────────────────────────────
+# Optional Linux window-focus backends:
+# PyWinCtl                # pip install PyWinCtl
+# python-xlib>=0.33       # pip install python-xlib  (or apt install python3-xlib)
