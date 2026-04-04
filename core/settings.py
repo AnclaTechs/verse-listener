@@ -36,6 +36,10 @@ class AppSettings:
     # UI
     theme: str = "dark"
     font_size: int = 13
+    preview_translation: str = "KJV"
+    preview_max_height: int = 220
+    preview_gradient_start: str = "#1d4ed8"
+    preview_gradient_end: str = "#0f172a"
 
     # ── Persistence ───────────────────────────────────────────────────────────
 
@@ -58,6 +62,14 @@ class AppSettings:
         self.ew_delay_enter = float(qs.value("ew/delay_enter", self.ew_delay_enter))
         self.theme          = qs.value("ui/theme",           self.theme)
         self.font_size      = int(qs.value("ui/font_size",   self.font_size))
+        self.preview_translation = qs.value("preview/translation", self.preview_translation)
+        self.preview_max_height = int(qs.value("preview/max_height", self.preview_max_height))
+        self.preview_gradient_start = qs.value(
+            "preview/gradient_start", self.preview_gradient_start
+        )
+        self.preview_gradient_end = qs.value(
+            "preview/gradient_end", self.preview_gradient_end
+        )
         self.audio_backend  = os.getenv("VERSE_LISTENER_AUDIO_BACKEND", self.audio_backend)
         self.stt_backend    = os.getenv("VERSE_LISTENER_STT_BACKEND", self.stt_backend)
         self.whisper_model  = os.getenv("VERSE_LISTENER_WHISPER_MODEL", self.whisper_model)
@@ -82,4 +94,8 @@ class AppSettings:
         qs.setValue("ew/delay_enter",    self.ew_delay_enter)
         qs.setValue("ui/theme",          self.theme)
         qs.setValue("ui/font_size",      self.font_size)
+        qs.setValue("preview/translation", self.preview_translation)
+        qs.setValue("preview/max_height", self.preview_max_height)
+        qs.setValue("preview/gradient_start", self.preview_gradient_start)
+        qs.setValue("preview/gradient_end", self.preview_gradient_end)
         qs.sync()

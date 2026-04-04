@@ -14,6 +14,7 @@ Built for church AV operators: listen to a sermon in real time, instantly detect
 - 📖 **Bible verse detection** – all 66 books, dozens of abbreviations, natural-language patterns
   - `"Genesis 5:2"`, `"Gen 5 v 2"`, `"chapter 8 verse 28"`, `"Romans 8:28 through 30"`
 - ⭐ **Verse queue** with timestamps, confidence scores, and editable references
+- 🪟 **Local verse preview card** above the queue, powered by offline canon files in `canons/<EDITION>/verses.json`
 - ⛪ **EasyWorship automation** via PyAutoGUI – clicks the search box, types the reference, presses Enter
 - 🌗 **Dark and light themes**, church-friendly design
 - ⌨ **Hotkey**: `Ctrl+Shift+S` sends the top queued verse to EasyWorship
@@ -59,6 +60,25 @@ Set at least:
 ```bash
 OPENAI_API_KEY=your_key_here
 VERSE_LISTENER_STT_BACKEND=openai_realtime
+```
+
+### 3.2 – Add local Bible preview text
+
+For the queue preview card, place canon files like this:
+
+```text
+canons/
+└── KJV/
+    └── verses.json
+```
+
+The file should map references to verse text, for example:
+
+```json
+{
+  "John 3:16": "For God so loved the world...",
+  "John 3:17": "For God sent not his Son..."
+}
 ```
 
 ### 4 – (Linux) Install system packages
@@ -148,6 +168,18 @@ Notes:
 - `OPENAI_REALTIME_PROMPT` is a good place to bias scripture names, sermon terms, and punctuation style
 - OpenAI Realtime transcription expects 24 kHz PCM; the app handles resampling before streaming audio
 
+## Verse Preview
+
+The right-hand queue panel includes a compact preview card above the detected verses list.
+
+- Click a queued verse to load its text from `canons/<EDITION>/verses.json`
+- Range references like `Romans 8:28-30` are combined into one preview
+- Chapter-only references show the first few verses as a compact preview
+- In **Settings → Interface**, you can adjust:
+  - preview canon edition
+  - preview max height
+  - gradient start and end colors
+
 ### Optional: choose the EasyWorship window backend
 
 VerseListener reads `VERSE_LISTENER_EW_WINDOW_BACKEND` at startup.
@@ -230,6 +262,7 @@ verse_listener/
 ├── README.md
 ├── core/
 │   ├── bible_detector.py    # Verse pattern matching
+│   ├── bible_preview.py     # Local canon loading for verse preview
 │   ├── transcription.py     # Audio capture + STT threads
 │   ├── easyworship.py       # PyAutoGUI EasyWorship controller
 │   └── settings.py          # Persistent settings
@@ -252,6 +285,7 @@ verse_listener/
 | `PortAudio library not found`                  | Install `libportaudio2` (and, if needed, `portaudio19-dev`) then restart the app |
 | Model takes long to load                       | First run downloads faster-whisper model; subsequent runs are fast               |
 | EasyWorship not focused                        | Re-run calibration; increase Focus Delay in Settings                             |
+| Verse preview is blank                         | Check that the selected edition exists under `canons/<EDITION>/verses.json`      |
 | `PyGetWindow currently does not support Linux` | Set `VERSE_LISTENER_EW_WINDOW_BACKEND=pywinctl`, `wmctrl`, or `xlib`             |
 | PyAutoGUI fails on Linux                       | Install `python3-xlib`: `sudo apt install python3-xlib`                          |
 | JACK auto-connect fails                        | Manually connect ports in QJackCtl                                               |

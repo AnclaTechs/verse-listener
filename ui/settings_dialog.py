@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 
+from core.bible_preview import BiblePreviewLibrary
 from core.settings import AppSettings
 
 logger = logging.getLogger(__name__)
@@ -21,6 +22,7 @@ class SettingsDialog(QDialog):
     def __init__(self, settings: AppSettings, parent=None):
         super().__init__(parent)
         self.settings = settings
+        self._preview_library = BiblePreviewLibrary()
         self.setWindowTitle("VerseListener – Settings")
         self.setMinimumWidth(520)
         self.setModal(True)
@@ -185,6 +187,41 @@ class SettingsDialog(QDialog):
         form.addRow("Font Size:", self._font_size)
 
         layout.addWidget(grp)
+
+        preview_grp = QGroupBox("Verse Preview")
+        preview_form = QFormLayout(preview_grp)
+
+        self._preview_translation = QComboBox()
+        self._preview_translation.setEditable(True)
+        editions = self._preview_library.available_editions()
+        if editions:
+            self._preview_translation.addItems(editions)
+        self._preview_translation.setEditText(self.settings.preview_translation)
+        preview_form.addRow("Canon Edition:", self._preview_translation)
+
+        self._preview_max_height = QSpinBox()
+        self._preview_max_height.setRange(140, 500)
+        self._preview_max_height.setSingleStep(10)
+        preview_form.addRow("Preview Max Height:", self._preview_max_height)
+
+        self._preview_gradient_start = QLineEdit()
+        self._preview_gradient_start.setPlaceholderText("#1d4ed8")
+        preview_form.addRow("Gradient Start:", self._preview_gradient_start)
+
+        self._preview_gradient_end = QLineEdit()
+        self._preview_gradient_end.setPlaceholderText("#0f172a")
+        preview_form.addRow("Gradient End:", self._preview_gradient_end)
+
+        layout.addWidget(preview_grp)
+
+        note = QLabel(
+            "💡 The preview uses local canon files from canons/<EDITION>/verses.json.\n"
+            "   Pick the folder name as the edition, for example 'KJV'.\n"
+            "   The preview card stays compact and becomes scrollable when the verse text is longer."
+        )
+        note.setWordWrap(True)
+        note.setStyleSheet("color: #8892b0; font-size: 11px;")
+        layout.addWidget(note)
         layout.addStretch()
         return w
 
@@ -209,6 +246,10 @@ class SettingsDialog(QDialog):
         self._ew_delay_enter.setValue(s.ew_delay_enter)
         self._theme.setCurrentText(s.theme)
         self._font_size.setValue(s.font_size)
+        self._preview_translation.setCurrentText(s.preview_translation)
+        self._preview_max_height.setValue(s.preview_max_height)
+        self._preview_gradient_start.setText(s.preview_gradient_start)
+        self._preview_gradient_end.setText(s.preview_gradient_end)
 
     def _save_and_accept(self):
         s = self.settings
@@ -229,5 +270,13 @@ class SettingsDialog(QDialog):
         s.ew_delay_enter    = self._ew_delay_enter.value()
         s.theme             = self._theme.currentText()
         s.font_size         = self._font_size.value()
+        s.preview_translation = self._preview_translation.currentText().strip() or "KJV"
+        s.preview_max_height = self._preview_max_height.value()
+        s.preview_gradient_start = (
+            self._preview_gradient_start.text().strip() or "#1d4ed8"
+        )
+        s.preview_gradient_end = (
+            self._preview_gradient_end.text().strip() or "#0f172a"
+        )
         s.save()
         self.accept()

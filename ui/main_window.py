@@ -117,7 +117,7 @@ class MainWindow(QMainWindow):
         splitter.setHandleWidth(4)
 
         self._transcript_panel = TranscriptPanel()
-        self._queue_panel = VerseQueuePanel()
+        self._queue_panel = VerseQueuePanel(self.settings)
 
         splitter.addWidget(self._transcript_panel)
         splitter.addWidget(self._queue_panel)
@@ -326,6 +326,7 @@ class MainWindow(QMainWindow):
             # Reload settings
             self.settings.load()
             self._ew_controller = self._build_ew_controller()
+            self._queue_panel.apply_settings(self.settings)
             self._apply_theme()
             # Restart listening if active
             if self._listening:
