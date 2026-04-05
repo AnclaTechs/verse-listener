@@ -33,3 +33,6 @@ pygetwindow>=0.0.9       # preferred on Windows/macOS; safely skipped when unsup
 # Optional Linux window-focus backends:
 # PyWinCtl                # pip install PyWinCtl
 # python-xlib>=0.33       # pip install python-xlib  (or apt install python3-xlib)
+
+# Optional contextual passage matching upgrade:
+# sentence-transformers>=3.0.0   # pip install sentence-transformers

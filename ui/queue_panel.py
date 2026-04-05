@@ -12,12 +12,13 @@ from typing import Optional, Callable
 from PyQt6.QtWidgets import (
     QFrame, QVBoxLayout, QHBoxLayout, QLabel, QListWidget,
     QListWidgetItem, QPushButton, QWidget, QLineEdit, QSizePolicy,
-    QScrollArea,
+    QScrollArea, QAbstractItemView,
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QSize
 from PyQt6.QtGui import QColor
 
 from core.bible_preview import BiblePreview, BiblePreviewLibrary
+from core.context_matcher import PassageSuggestion
 from core.bible_detector import VerseMatch
 from core.settings import AppSettings
 
@@ -86,6 +87,10 @@ class VerseQueuePanel(QFrame):
         div.setStyleSheet("color: #2d3142;")
         layout.addWidget(div)
 
+        self._likely_passage = _LikelyPassageWidget()
+        self._likely_passage.queue_requested.connect(self._queue_likely_passage)
+        layout.addWidget(self._likely_passage)
+
         self._preview = _VersePreviewWidget(self._preview_library)
         layout.addWidget(self._preview)
 
@@ -93,6 +98,15 @@ class VerseQueuePanel(QFrame):
         self._list = QListWidget()
         self._list.setObjectName("queueList")
         self._list.setSpacing(2)
+        self._list.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Expanding,
+        )
+        self._list.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self._list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._list.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self._list.setWordWrap(True)
+        self._list.setMinimumHeight(160)
         self._list.itemSelectionChanged.connect(self._on_selection_changed)
         layout.addWidget(self._list, 1)
 
@@ -140,13 +154,22 @@ class VerseQueuePanel(QFrame):
 
     # ── Public API ────────────────────────────────────────────────────────────
 
-    def add_verse(self, vm: VerseMatch):
+    def add_verse(self, vm: VerseMatch, *, select: bool = False) -> bool:
         """Add a detected verse to the queue."""
+        existing_row = self._find_reference_row(vm.reference)
+        if existing_row is not None:
+            if select:
+                self._list.setCurrentRow(existing_row)
+            return False
+
         entry = QueueEntry(verse=vm)
         self._entries.append(entry)
         self._add_list_item(entry)
         self._update_count()
         logger.info("Queued verse: %s", entry.reference)
+        if select:
+            self._list.setCurrentRow(self._list.count() - 1)
+        return True
 
     def send_top_verse(self):
         """Hotkey: send the first queued verse."""
@@ -157,6 +180,7 @@ class VerseQueuePanel(QFrame):
         self._entries.clear()
         self._list.clear()
         self._update_count()
+        self.clear_likely_passage()
         self._preview.clear_preview()
         self._edit_field.clear()
         self._edit_field.setEnabled(False)
@@ -165,7 +189,17 @@ class VerseQueuePanel(QFrame):
 
     def apply_settings(self, settings: AppSettings):
         self._settings = settings
+        self._likely_passage.apply_settings(settings)
         self._preview.apply_settings(settings)
+
+    def set_likely_passage(self, suggestion: PassageSuggestion):
+        self._likely_passage.set_suggestion(suggestion)
+
+    def clear_likely_passage(self):
+        self._likely_passage.clear_suggestion()
+
+    def queued_references(self) -> set[str]:
+        return {entry.reference for entry in self._entries}
 
     # ── Internal helpers ──────────────────────────────────────────────────────
 
@@ -180,6 +214,13 @@ class VerseQueuePanel(QFrame):
         self._list.setItemWidget(item, widget)
         self._refresh_item_size(item, widget)
         self._list.scrollToBottom()
+
+    def _find_reference_row(self, reference: str) -> Optional[int]:
+        needle = reference.strip().lower()
+        for row, entry in enumerate(self._entries):
+            if entry.reference.strip().lower() == needle:
+                return row
+        return None
 
     def _refresh_item_size(self, item: QListWidgetItem, widget: "_VerseItemWidget"):
         widget_size = widget.sizeHint()
@@ -256,6 +297,162 @@ class VerseQueuePanel(QFrame):
         self._edit_field.setEnabled(False)
         self._send_btn.setEnabled(False)
         self._remove_btn.setEnabled(False)
+
+    def _queue_likely_passage(self):
+        suggestion = self._likely_passage.suggestion()
+        if not suggestion:
+            return
+
+        vm = suggestion.verse_match
+        queued_vm = VerseMatch(
+            raw_text=vm.raw_text,
+            book=vm.book,
+            chapter=vm.chapter,
+            verse_start=vm.verse_start,
+            verse_end=vm.verse_end,
+            confidence=suggestion.score,
+        )
+        added = self.add_verse(queued_vm, select=True)
+        if added:
+            self.clear_likely_passage()
+
+
+class _LikelyPassageWidget(QFrame):
+    queue_requested = pyqtSignal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._suggestion: Optional[PassageSuggestion] = None
+        self._window_seconds = 30
+        self.setObjectName("likelyPassageCard")
+        self._build_ui()
+        self.clear_suggestion()
+
+    def _build_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(8)
+
+        top = QHBoxLayout()
+        top.setSpacing(8)
+
+        title = QLabel("LIKELY PASSAGE")
+        title.setStyleSheet(
+            "color: #64748b; font-size: 10px; font-weight: bold; letter-spacing: 1px;"
+        )
+        top.addWidget(title)
+        top.addStretch()
+
+        self._score_badge = QLabel("0%")
+        self._score_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._score_badge.setMinimumSize(56, 24)
+        top.addWidget(self._score_badge)
+        layout.addLayout(top)
+
+        self._reference_label = QLabel("Waiting for enough sermon context…")
+        self._reference_label.setWordWrap(True)
+        self._reference_label.setStyleSheet(
+            "color: #e2e8f0; font-size: 15px; font-weight: 700;"
+        )
+        layout.addWidget(self._reference_label)
+
+        self._summary_label = QLabel(
+            "When no explicit verse is mentioned, VerseListener can infer a likely passage from the recent transcript context."
+        )
+        self._summary_label.setWordWrap(True)
+        self._summary_label.setStyleSheet("color: #94a3b8; font-size: 11px;")
+        layout.addWidget(self._summary_label)
+
+        bottom = QHBoxLayout()
+        bottom.setSpacing(8)
+
+        self._meta_label = QLabel("")
+        self._meta_label.setWordWrap(True)
+        self._meta_label.setStyleSheet("color: #94a3b8; font-size: 10px;")
+        bottom.addWidget(self._meta_label, 1)
+
+        self._queue_btn = QPushButton("Queue Suggestion")
+        self._queue_btn.setEnabled(False)
+        self._queue_btn.clicked.connect(self.queue_requested.emit)
+        bottom.addWidget(self._queue_btn, 0, Qt.AlignmentFlag.AlignRight)
+        layout.addLayout(bottom)
+
+        self.setStyleSheet(
+            """
+            QFrame#likelyPassageCard {
+                margin: 10px 10px 8px 10px;
+                padding: 0px;
+                border: 1px solid rgba(37, 99, 235, 0.28);
+                border-radius: 12px;
+                background-color: rgba(30, 64, 175, 0.10);
+            }
+            QFrame#likelyPassageCard QPushButton {
+                background-color: rgba(37, 99, 235, 0.16);
+                border: 1px solid rgba(96, 165, 250, 0.28);
+                border-radius: 10px;
+                color: #dbeafe;
+                font-weight: 700;
+                min-height: 28px;
+                padding: 6px 12px;
+            }
+            QFrame#likelyPassageCard QPushButton:hover {
+                background-color: rgba(37, 99, 235, 0.24);
+            }
+            QFrame#likelyPassageCard QPushButton:disabled {
+                color: #64748b;
+                background-color: rgba(15, 23, 42, 0.16);
+                border-color: rgba(100, 116, 139, 0.18);
+            }
+            """
+        )
+
+    def apply_settings(self, settings: AppSettings):
+        self._window_seconds = max(5, settings.context_window_seconds)
+        if not settings.context_detection_enabled:
+            self.hide()
+        elif self._suggestion or self._reference_label.text().startswith("Waiting"):
+            self.show()
+        if not self._suggestion:
+            self._meta_label.setText(f"Rolling context: {self._window_seconds}s")
+
+    def set_suggestion(self, suggestion: PassageSuggestion):
+        self._suggestion = suggestion
+        self.show()
+        self._reference_label.setText(suggestion.reference)
+        summary = suggestion.text.strip()
+        if len(summary) > 170:
+            summary = summary[:167].rstrip() + "..."
+        self._summary_label.setText(summary)
+        self._meta_label.setText(
+            f"{suggestion.method} match from last {self._window_seconds}s of transcript"
+        )
+        self._score_badge.setText(f"{suggestion.score_percent}%")
+        self._score_badge.setStyleSheet(
+            "color: #dbeafe; font-size: 11px; font-weight: 700; "
+            "background-color: rgba(37, 99, 235, 0.18); "
+            "border: 1px solid rgba(96, 165, 250, 0.24); "
+            "border-radius: 10px; padding: 3px 10px;"
+        )
+        self._queue_btn.setEnabled(True)
+
+    def clear_suggestion(self):
+        self._suggestion = None
+        self._reference_label.setText("Waiting for enough sermon context…")
+        self._summary_label.setText(
+            "When no explicit verse is mentioned, VerseListener can infer a likely passage from the recent transcript context."
+        )
+        self._meta_label.setText(f"Rolling context: {self._window_seconds}s")
+        self._score_badge.setText("—")
+        self._score_badge.setStyleSheet(
+            "color: #94a3b8; font-size: 11px; font-weight: 700; "
+            "background-color: rgba(15, 23, 42, 0.16); "
+            "border: 1px solid rgba(100, 116, 139, 0.18); "
+            "border-radius: 10px; padding: 3px 10px;"
+        )
+        self._queue_btn.setEnabled(False)
+
+    def suggestion(self) -> Optional[PassageSuggestion]:
+        return self._suggestion
 
 
 class _VerseItemWidget(QWidget):

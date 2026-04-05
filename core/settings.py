@@ -40,6 +40,8 @@ class AppSettings:
     preview_max_height: int = 220
     preview_gradient_start: str = "#1d4ed8"
     preview_gradient_end: str = "#0f172a"
+    context_detection_enabled: bool = True
+    context_window_seconds: int = 8
 
     # ── Persistence ───────────────────────────────────────────────────────────
 
@@ -70,6 +72,12 @@ class AppSettings:
         self.preview_gradient_end = qs.value(
             "preview/gradient_end", self.preview_gradient_end
         )
+        self.context_detection_enabled = qs.value(
+            "context/enabled", self.context_detection_enabled
+        ) in (True, "true")
+        self.context_window_seconds = int(
+            qs.value("context/window_seconds", self.context_window_seconds)
+        )
         self.audio_backend  = os.getenv("VERSE_LISTENER_AUDIO_BACKEND", self.audio_backend)
         self.stt_backend    = os.getenv("VERSE_LISTENER_STT_BACKEND", self.stt_backend)
         self.whisper_model  = os.getenv("VERSE_LISTENER_WHISPER_MODEL", self.whisper_model)
@@ -98,4 +106,6 @@ class AppSettings:
         qs.setValue("preview/max_height", self.preview_max_height)
         qs.setValue("preview/gradient_start", self.preview_gradient_start)
         qs.setValue("preview/gradient_end", self.preview_gradient_end)
+        qs.setValue("context/enabled", self.context_detection_enabled)
+        qs.setValue("context/window_seconds", self.context_window_seconds)
         qs.sync()

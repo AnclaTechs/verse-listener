@@ -103,6 +103,19 @@ class SettingsDialog(QDialog):
         form.addRow("Vosk Model:", self._vosk_model)
 
         layout.addWidget(grp)
+
+        context_grp = QGroupBox("Contextual Passage Guessing")
+        context_form = QFormLayout(context_grp)
+
+        self._context_detection_enabled = QCheckBox("Suggest likely passage from recent transcript context")
+        context_form.addRow("", self._context_detection_enabled)
+
+        self._context_window_seconds = QSpinBox()
+        self._context_window_seconds.setRange(5, 60)
+        self._context_window_seconds.setSingleStep(1)
+        context_form.addRow("Context Window:", self._context_window_seconds)
+
+        layout.addWidget(context_grp)
         layout.addStretch()
 
         note = QLabel(
@@ -110,7 +123,8 @@ class SettingsDialog(QDialog):
             "   Recommended for English sermons: backend 'whisper' with model 'small.en'.\n"
             "   Use 'base.en' on lower-end machines or 'medium.en' if you have CPU headroom.\n"
             "   For cloud realtime STT, use 'openai_realtime' and set OPENAI_API_KEY in .env.\n"
-            "   Vosk requires a model folder at ~/.vosk/model-<name>."
+            "   Vosk requires a model folder at ~/.vosk/model-<name>.\n"
+            "   Contextual guessing uses local Bible text first and upgrades automatically if sentence-transformers is installed."
         )
         note.setWordWrap(True)
         note.setStyleSheet("color: #8892b0; font-size: 11px;")
@@ -234,6 +248,8 @@ class SettingsDialog(QDialog):
         self._stt_backend.setCurrentText(s.stt_backend)
         self._whisper_model.setCurrentText(s.whisper_model)
         self._vosk_model.setText(s.vosk_model)
+        self._context_detection_enabled.setChecked(s.context_detection_enabled)
+        self._context_window_seconds.setValue(s.context_window_seconds)
         self._ew_title.setText(s.ew_window_title)
         self._ew_translation.setText(s.ew_translation)
         self._ew_search_x.setValue(s.ew_search_x)
@@ -258,6 +274,8 @@ class SettingsDialog(QDialog):
         s.stt_backend       = self._stt_backend.currentText()
         s.whisper_model     = self._whisper_model.currentText()
         s.vosk_model        = self._vosk_model.text().strip() or "en-us"
+        s.context_detection_enabled = self._context_detection_enabled.isChecked()
+        s.context_window_seconds = self._context_window_seconds.value()
         s.ew_window_title   = self._ew_title.text().strip() or "EasyWorship"
         s.ew_translation    = self._ew_translation.text().strip() or "NIV"
         s.ew_search_x       = self._ew_search_x.value()

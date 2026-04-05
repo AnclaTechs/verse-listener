@@ -6,6 +6,8 @@ Orchestrates audio capture, transcription, verse detection, queue, and EasyWorsh
 
 import logging
 import threading
+import time
+from collections import deque
 from datetime import datetime
 from typing import Optional
 
@@ -19,6 +21,7 @@ from PyQt6.QtGui import QAction, QKeySequence, QShortcut, QFont
 
 from core.settings import AppSettings
 from core.bible_detector import BibleDetector
+from core.context_matcher import ContextPassageMatcher, PassageSuggestion
 from core.transcription import AudioCaptureThread, TranscriptionThread
 from core.easyworship import EasyWorshipController, EasyWorshipConfig
 from ui.transcript_panel import TranscriptPanel
@@ -30,12 +33,22 @@ logger = logging.getLogger(__name__)
 
 
 class MainWindow(QMainWindow):
+    CONTEXT_IMMEDIATE_SCORE = 0.55
+    CONTEXT_STABLE_HIT_COUNT = 2
+    CONTEXT_MISS_GRACE = 2
+
     def __init__(self):
         super().__init__()
         self.settings = AppSettings()
         self.settings.load()
 
         self._detector = BibleDetector()
+        self._context_segments: deque[tuple[float, str]] = deque()
+        self._context_streak_reference = ""
+        self._context_streak_count = 0
+        self._context_last_suggestion: Optional[PassageSuggestion] = None
+        self._context_miss_count = 0
+        self._context_matcher = self._build_context_matcher()
         self._ew_controller = self._build_ew_controller()
         self._audio_thread: Optional[AudioCaptureThread] = None
         self._transcription_thread: Optional[TranscriptionThread] = None
@@ -66,6 +79,14 @@ class MainWindow(QMainWindow):
             live_y=self.settings.ew_live_y if self.settings.ew_live_y >= 0 else None,
         )
         return EasyWorshipController(cfg)
+
+    def _build_context_matcher(self) -> ContextPassageMatcher:
+        matcher = ContextPassageMatcher(
+            translation=self.settings.preview_translation or self.settings.ew_translation
+        )
+        if self.settings.context_detection_enabled:
+            matcher.warm_async()
+        return matcher
 
     def _build_ui(self):
         # ── Toolbar ───────────────────────────────────────────────────────────
@@ -177,6 +198,7 @@ class MainWindow(QMainWindow):
         self._start_action.setText("⏹  Stop Listening")
         self._start_action.setChecked(True)
         self._detector.reset()
+        self._reset_context_tracking()
         self._detected_count = 0
 
         # Audio capture thread
@@ -239,6 +261,8 @@ class MainWindow(QMainWindow):
         if not text.strip():
             return
 
+        self._push_context_segment(text)
+
         # Detect verses
         matches = self._detector.detect(text)
 
@@ -250,6 +274,15 @@ class MainWindow(QMainWindow):
             self._queue_panel.add_verse(vm)
             self._detected_count = getattr(self, "_detected_count", 0) + 1
             self._sb_detected.setText(f"Verses detected: {self._detected_count}")
+
+        if matches:
+            self._reset_context_suggestion()
+        else:
+            suggestion = self._maybe_suggest_context_passage()
+            if suggestion:
+                self._queue_panel.set_likely_passage(suggestion)
+            else:
+                self._queue_panel.clear_likely_passage()
 
     @pyqtSlot(str)
     def _on_audio_status(self, msg: str):
@@ -326,6 +359,8 @@ class MainWindow(QMainWindow):
             # Reload settings
             self.settings.load()
             self._ew_controller = self._build_ew_controller()
+            self._context_matcher = self._build_context_matcher()
+            self._reset_context_tracking(clear_ui=False)
             self._queue_panel.apply_settings(self.settings)
             self._apply_theme()
             # Restart listening if active
@@ -344,8 +379,65 @@ class MainWindow(QMainWindow):
         self._transcript_panel.clear()
         self._queue_panel.clear()
         self._detector.reset()
+        self._reset_context_tracking(clear_ui=False)
         self._detected_count = 0
         self._sb_detected.setText("Verses detected: 0")
+
+    def _push_context_segment(self, text: str):
+        now = time.monotonic()
+        self._context_segments.append((now, text.strip()))
+        max_age = max(5, self.settings.context_window_seconds)
+        while self._context_segments and now - self._context_segments[0][0] > max_age:
+            self._context_segments.popleft()
+
+    def _context_text(self) -> str:
+        return " ".join(segment for _, segment in self._context_segments).strip()
+
+    def _reset_context_tracking(self, *, clear_ui: bool = True):
+        self._context_segments.clear()
+        self._reset_context_suggestion(clear_ui=clear_ui)
+
+    def _reset_context_suggestion(self, *, clear_ui: bool = True):
+        self._context_streak_reference = ""
+        self._context_streak_count = 0
+        self._context_last_suggestion = None
+        self._context_miss_count = 0
+        if clear_ui:
+            self._queue_panel.clear_likely_passage()
+
+    def _maybe_suggest_context_passage(self) -> Optional[PassageSuggestion]:
+        if not self.settings.context_detection_enabled:
+            return None
+
+        suggestion = self._context_matcher.suggest(
+            self._context_text(),
+            exclude_references=self._queue_panel.queued_references(),
+        )
+        if not suggestion:
+            self._context_miss_count += 1
+            if (
+                self._context_last_suggestion
+                and self._context_miss_count <= self.CONTEXT_MISS_GRACE
+            ):
+                return self._context_last_suggestion
+            self._reset_context_suggestion(clear_ui=False)
+            return None
+
+        self._context_last_suggestion = suggestion
+        self._context_miss_count = 0
+
+        if suggestion.reference == self._context_streak_reference:
+            self._context_streak_count += 1
+        else:
+            self._context_streak_reference = suggestion.reference
+            self._context_streak_count = 1
+
+        if suggestion.score >= self.CONTEXT_IMMEDIATE_SCORE:
+            return suggestion
+
+        if self._context_streak_count < self.CONTEXT_STABLE_HIT_COUNT:
+            return None
+        return suggestion
 
     # ── Window close ──────────────────────────────────────────────────────────
 

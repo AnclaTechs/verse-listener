@@ -15,6 +15,7 @@ Built for church AV operators: listen to a sermon in real time, instantly detect
   - `"Genesis 5:2"`, `"Gen 5 v 2"`, `"chapter 8 verse 28"`, `"Romans 8:28 through 30"`
 - ⭐ **Verse queue** with timestamps, confidence scores, and editable references
 - 🪟 **Local verse preview card** above the queue, powered by offline canon files in `canons/<EDITION>/verses.json`
+- 🧭 **Likely passage suggestions** from a rolling sermon context window, even when no explicit verse reference is spoken
 - ⛪ **EasyWorship automation** via PyAutoGUI – clicks the search box, types the reference, presses Enter
 - 🌗 **Dark and light themes**, church-friendly design
 - ⌨ **Hotkey**: `Ctrl+Shift+S` sends the top queued verse to EasyWorship
@@ -179,6 +180,23 @@ The right-hand queue panel includes a compact preview card above the detected ve
   - preview canon edition
   - preview max height
   - gradient start and end colors
+
+## Contextual Passage Guessing
+
+VerseListener can also infer a likely Bible passage from what is being preached, even if the speaker does not explicitly say the reference.
+
+- It keeps a rolling context window from the last few transcript segments
+- Exact verse detection still wins first
+- If no explicit reference is found, the app searches the local canon for the closest passage match
+- Suggestions appear as a separate **Likely Passage** card and can be queued manually
+
+Default behavior:
+
+- context window: `30s`
+- matcher: local keyword retrieval
+- optional upgrade: install `sentence-transformers` for semantic reranking
+
+Enable and adjust it in **Settings → Speech Model**.
 
 ### Optional: choose the EasyWorship window backend
 
