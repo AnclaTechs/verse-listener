@@ -52,6 +52,12 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+Windows note:
+
+- use the repo's checked-in `requirements.txt`
+- do not use a Linux-generated `pip freeze` file for Windows installs
+- Linux-only CUDA packages such as `nvidia-cufile` are not needed for this app on Windows
+
 ### 3.1 – Configure `.env`
 
 The project includes a ready-to-edit `.env` file.
