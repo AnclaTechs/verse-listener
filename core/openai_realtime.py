@@ -11,6 +11,7 @@ import logging
 import os
 import queue
 import threading
+import time
 from dataclasses import dataclass
 from typing import Callable, Optional
 from urllib import error as urllib_error
@@ -18,6 +19,10 @@ from urllib import request as urllib_request
 import numpy as np
 
 logger = logging.getLogger(__name__)
+
+
+class RealtimeReconnectRequired(RuntimeError):
+    """Raised when the Realtime websocket should be re-established."""
 
 
 def _try_websocket():
@@ -161,6 +166,9 @@ class OpenAIRealtimeTranscriptionConfig:
 
 
 class OpenAIRealtimeTranscriber:
+    WEBSOCKET_IO_TIMEOUT = 10.0
+    RECONNECT_DELAY_SECONDS = 1.0
+
     def __init__(
         self,
         config: OpenAIRealtimeTranscriptionConfig,
@@ -184,6 +192,9 @@ class OpenAIRealtimeTranscriber:
         self.on_error = on_error
         self.on_model_loaded = on_model_loaded
         self._partials: dict[str, str] = {}
+        self._connection_closed = threading.Event()
+        self._connection_error_message = ""
+        self._connection_fatal = False
 
     def run(self):
         websocket_mod = _try_websocket()
@@ -197,56 +208,98 @@ class OpenAIRealtimeTranscriber:
                 "OPENAI_API_KEY is not set. Add it to .env before using openai_realtime."
             )
 
-        self.on_status(f"Connecting to OpenAI Realtime ({self.config.model})…")
-        client_secret = self._create_client_secret()
-        ws = websocket_mod.create_connection(
-            self.config.websocket_url(),
-            header=self.config.api_headers(client_secret),
-            timeout=10,
-            enable_multithread=True,
-        )
-        ws.settimeout(1)
-
-        try:
-            self.on_model_loaded(f"openai/{self.config.model}")
-            self.on_status(f"Transcribing via OpenAI Realtime ({self.config.model})")
-
-            reader = threading.Thread(
-                target=self._reader_loop,
-                args=(ws, websocket_mod),
-                daemon=True,
-            )
-            reader.start()
-
-            while not self.stop_event.is_set():
-                try:
-                    chunk = self.audio_queue.get(timeout=0.1)
-                except queue.Empty:
-                    continue
-
-                audio_bytes = self._chunk_to_pcm_bytes(chunk)
-                if not audio_bytes:
-                    continue
-
-                ws.send(
-                    json.dumps(
-                        {
-                            "type": "input_audio_buffer.append",
-                            "audio": base64.b64encode(audio_bytes).decode("ascii"),
-                        }
-                    )
+        first_connection = True
+        while not self.stop_event.is_set():
+            ws = None
+            reader = None
+            self._reset_connection_state()
+            try:
+                self.on_status(f"Connecting to OpenAI Realtime ({self.config.model})…")
+                client_secret = self._create_client_secret()
+                ws = websocket_mod.create_connection(
+                    self.config.websocket_url(),
+                    header=self.config.api_headers(client_secret),
+                    timeout=self.WEBSOCKET_IO_TIMEOUT,
+                    enable_multithread=True,
                 )
+                ws.settimeout(self.WEBSOCKET_IO_TIMEOUT)
 
-            try:
-                ws.send(json.dumps({"type": "input_audio_buffer.commit"}))
-            except Exception:
-                pass
-            reader.join(timeout=1.0)
-        finally:
-            try:
-                ws.close()
-            except Exception:
-                pass
+                if first_connection:
+                    self.on_model_loaded(f"openai/{self.config.model}")
+                    first_connection = False
+                self.on_status(f"Transcribing via OpenAI Realtime ({self.config.model})")
+
+                reader = threading.Thread(
+                    target=self._reader_loop,
+                    args=(ws, websocket_mod),
+                    daemon=True,
+                )
+                reader.start()
+
+                while not self.stop_event.is_set():
+                    try:
+                        chunk = self.audio_queue.get(timeout=0.1)
+                    except queue.Empty:
+                        if self._connection_closed.is_set() and self._connection_fatal:
+                            raise RuntimeError(
+                                self._connection_error_message
+                                or "OpenAI Realtime connection closed unexpectedly."
+                            )
+                        continue
+
+                    if self._connection_closed.is_set():
+                        if self._connection_fatal:
+                            raise RuntimeError(
+                                self._connection_error_message
+                                or "OpenAI Realtime connection closed unexpectedly."
+                            )
+                        raise RealtimeReconnectRequired(
+                            self._connection_error_message
+                            or "OpenAI Realtime connection dropped."
+                        )
+
+                    audio_bytes = self._chunk_to_pcm_bytes(chunk)
+                    if not audio_bytes:
+                        continue
+
+                    try:
+                        ws.send(
+                            json.dumps(
+                                {
+                                    "type": "input_audio_buffer.append",
+                                    "audio": base64.b64encode(audio_bytes).decode("ascii"),
+                                }
+                            )
+                        )
+                    except (
+                        websocket_mod.WebSocketConnectionClosedException,
+                        websocket_mod.WebSocketTimeoutException,
+                        TimeoutError,
+                    ) as exc:
+                        raise RealtimeReconnectRequired(
+                            f"OpenAI Realtime send interrupted: {exc}"
+                        ) from exc
+
+                try:
+                    ws.send(json.dumps({"type": "input_audio_buffer.commit"}))
+                except Exception:
+                    pass
+                if reader:
+                    reader.join(timeout=1.0)
+                return
+            except RealtimeReconnectRequired as exc:
+                if self.stop_event.is_set():
+                    break
+                logger.warning("Realtime connection dropped; reconnecting: %s", exc)
+                self.on_status("Realtime connection lost; reconnecting…")
+                self._drain_audio_queue()
+                time.sleep(self.RECONNECT_DELAY_SECONDS)
+            finally:
+                try:
+                    if ws is not None:
+                        ws.close()
+                except Exception:
+                    pass
 
     def _create_client_secret(self) -> str:
         request_body = json.dumps({"session": self.config.session_config()}).encode("utf-8")
@@ -286,6 +339,23 @@ class OpenAIRealtimeTranscriber:
             headers["OpenAI-Project"] = self.config.project
         return headers
 
+    def _reset_connection_state(self):
+        self._partials.clear()
+        self._connection_closed.clear()
+        self._connection_error_message = ""
+        self._connection_fatal = False
+
+    def _drain_audio_queue(self):
+        dropped = 0
+        while True:
+            try:
+                self.audio_queue.get_nowait()
+                dropped += 1
+            except queue.Empty:
+                break
+        if dropped:
+            logger.info("Dropped %d queued audio chunks during Realtime reconnect", dropped)
+
     def _reader_loop(self, ws, websocket_mod):
         while not self.stop_event.is_set():
             try:
@@ -293,9 +363,11 @@ class OpenAIRealtimeTranscriber:
             except websocket_mod.WebSocketTimeoutException:
                 continue
             except websocket_mod.WebSocketConnectionClosedException:
+                self._connection_closed.set()
                 return
             except Exception as exc:
-                self.on_error(f"OpenAI Realtime connection error: {exc}")
+                self._connection_error_message = f"OpenAI Realtime connection error: {exc}"
+                self._connection_closed.set()
                 return
 
             if not message:
@@ -334,8 +406,19 @@ class OpenAIRealtimeTranscriber:
                     or event.get("message")
                     or "OpenAI Realtime error"
                 )
-                self.on_error(message)
-                continue
+                error_type = error_obj.get("type", "")
+                self._connection_error_message = message
+                self._connection_fatal = error_type in {
+                    "invalid_request_error",
+                    "authentication_error",
+                    "permission_error",
+                }
+                self._connection_closed.set()
+                if self._connection_fatal:
+                    self.on_error(message)
+                else:
+                    logger.warning("OpenAI Realtime server error: %s", message)
+                return
 
             if event_type in {"session.created", "session.updated"}:
                 logger.debug("Realtime session event: %s", event_type)
