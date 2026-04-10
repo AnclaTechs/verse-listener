@@ -1,6 +1,6 @@
 # VerseListener License
 
-Copyright (C) 2026 Ancla Technologies
+Copyright (C) 2026 Ancla Technologies Ltd
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
