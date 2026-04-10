@@ -318,4 +318,4 @@ verse_listener/
 
 ## License
 
-MIT – free to use and modify for church ministry purposes.
+GNU GPL v3.0 only (`GPL-3.0-only`) – see [LICENSE.md](LICENSE.md).
