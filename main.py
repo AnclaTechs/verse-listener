@@ -11,7 +11,13 @@ import logging
 # Load .env before app imports so settings/env-backed integrations can see it.
 try:
     from dotenv import load_dotenv
-    load_dotenv()
+    from core.app_paths import find_config_file
+
+    env_path = find_config_file(".env")
+    if env_path:
+        load_dotenv(env_path)
+    else:
+        load_dotenv()
 except Exception:
     pass
 
@@ -35,7 +41,6 @@ from ui.main_window import MainWindow
 
 
 def main():
-    print(PyQt6)
     logger.info("Starting VerseListener")
     app = QApplication(sys.argv)
     app.setApplicationName("VerseListener")

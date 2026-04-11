@@ -3,3 +3,9 @@
 __pycache__/
 *.pyc
 .codex
+
+dist/
+build/
+*.spec.bak
+*.pyz
+windows_runtime/

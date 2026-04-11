@@ -202,7 +202,35 @@ Notes:
 - estimated sizes are shown in the add-ons manager before install
 - installs go into the user's VerseListener add-ons folder, not into the bundled executable itself
 - restart after install is recommended for the cleanest reload
-- bundled `onedir` builds should include a pip-capable helper runtime if you want in-app installs to work without a separate Python install
+- Windows `onedir` builds can bundle a helper Python runtime so in-app installs work even when the target PC does not have Python installed
+
+## Windows Onedir Build
+
+For a lean Windows bundle with OpenAI as the default path:
+
+```bat
+build_windows.bat
+```
+
+What this does:
+
+- installs the lean Windows runtime dependencies from `requirements-windows-openai.txt`
+- builds `VerseListener.exe` with `PyInstaller` using `VerseListener.spec`
+- prepares and bundles a helper Python runtime under `dist\VerseListener\runtime\python`
+
+Why the helper runtime matters:
+
+- the shipped app stays lean and OpenAI-first by default
+- optional add-ons still install later from **Settings → Add-ons**
+- the target PC does not need a separate Python install for those add-ons
+
+The helper runtime is prepared by:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\prepare_windows_runtime.ps1 -PythonVersion 3.12.3 -Force
+```
+
+Use the same Python major/minor version that you build the app with on Windows. `build_windows.bat` will auto-prepare this runtime for you when possible.
 
 ## Verse Preview
 

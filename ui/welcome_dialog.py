@@ -5,8 +5,6 @@ First-run onboarding dialog for VerseListener.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from PyQt6.QtCore import QRectF, Qt
 from PyQt6.QtGui import QColor, QPainter, QPainterPath, QPen, QPixmap
 from PyQt6.QtWidgets import (
@@ -19,6 +17,8 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+from core.app_paths import resource_path
 
 
 class LayeredHeroArt(QFrame):
@@ -286,7 +286,7 @@ class WelcomeDialog(QDialog):
         return card
 
     def _load_pixmap(self, name: str) -> QPixmap | None:
-        candidate = Path(__file__).resolve().parents[1] / "assets" / name
+        candidate = resource_path("assets", name)
         if not candidate.is_file():
             return None
         pixmap = QPixmap(str(candidate))

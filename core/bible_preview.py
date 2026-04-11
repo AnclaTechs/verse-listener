@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from core.app_paths import resource_path
+
 logger = logging.getLogger(__name__)
 
 _REFERENCE_RE = re.compile(
@@ -31,7 +33,7 @@ class BiblePreview:
 
 class BiblePreviewLibrary:
     def __init__(self, root: Optional[Path] = None):
-        self.root = root or Path(__file__).resolve().parent.parent / "canons"
+        self.root = root or resource_path("canons")
         self._cache: dict[str, dict[str, str]] = {}
 
     def available_editions(self) -> list[str]:

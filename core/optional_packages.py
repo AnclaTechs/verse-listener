@@ -17,7 +17,9 @@ from dataclasses import dataclass
 from importlib import metadata as importlib_metadata
 from importlib import util as importlib_util
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable, Iterator, Optional
+
+from core.app_paths import executable_dir
 
 
 @dataclass(frozen=True)
@@ -80,6 +82,7 @@ OPTIONAL_PACKAGE_SPECS: tuple[OptionalPackageSpec, ...] = (
 )
 
 OPTIONAL_PACKAGE_MAP = {spec.key: spec for spec in OPTIONAL_PACKAGE_SPECS}
+_PIP_PROBE_CACHE: dict[tuple[str, ...], bool] = {}
 
 
 def _user_data_root() -> Path:
@@ -193,10 +196,18 @@ class OptionalPackageInstaller:
         self.extras_dir = bootstrap_optional_packages()
 
     def installer_ready(self) -> tuple[bool, str]:
-        if self._find_pip_command():
-            return True, "Using a Python pip runtime."
+        command, label = self._resolve_pip_command()
+        if command:
+            return True, f"Using {label}."
         if self._can_use_embedded_pip():
             return True, "Using the embedded pip runtime."
+        if getattr(sys, "frozen", False):
+            return (
+                False,
+                "Bundled helper runtime unavailable. Rebuild the Windows package with "
+                "scripts\\prepare_windows_runtime.ps1 so users can install add-ons "
+                "without a separate Python install.",
+            )
         return (
             False,
             "Optional installs need a pip-capable runtime. "
@@ -209,7 +220,7 @@ class OptionalPackageInstaller:
         progress_callback: Optional[Callable[[str], None]] = None,
     ):
         spec = get_optional_package_spec(package_key)
-        command = self._find_pip_command()
+        command, _ = self._resolve_pip_command()
         if command:
             self._install_with_subprocess(spec, command, progress_callback)
         elif self._can_use_embedded_pip():
@@ -218,48 +229,81 @@ class OptionalPackageInstaller:
             raise RuntimeError(self.installer_ready()[1])
         bootstrap_optional_packages()
 
-    def _find_pip_command(self) -> list[str]:
+    def _runtime_candidates(self) -> Iterator[tuple[list[str], str]]:
         env_python = os.getenv("VERSE_LISTENER_INSTALL_PYTHON", "").strip()
-        candidates: list[Path] = []
+        candidates: list[tuple[list[str], str]] = []
         if env_python:
-            candidates.append(Path(env_python))
+            candidates.append(([env_python], "configured helper runtime"))
 
-        executable = Path(sys.executable)
+        executable = Path(sys.executable).resolve()
         if not getattr(sys, "frozen", False):
-            candidates.append(executable)
+            candidates.append(([str(executable)], "current Python runtime"))
 
         if sys.platform == "win32":
             candidates.extend(
                 [
-                    executable.parent / "runtime" / "python" / "python.exe",
-                    executable.parent / "python.exe",
+                    ([str(executable_dir() / "runtime" / "python" / "python.exe")], "bundled helper runtime"),
+                    ([str(executable_dir() / "python.exe")], "local helper runtime"),
                 ]
             )
             for launcher in ("py", "python"):
                 launcher_path = shutil.which(launcher)
                 if launcher_path:
-                    candidates.append(Path(launcher_path))
+                    if launcher == "py":
+                        candidates.append(([launcher_path, "-3"], "system Python launcher"))
+                    else:
+                        candidates.append(([launcher_path], "system Python runtime"))
         else:
             candidates.extend(
                 [
-                    executable.parent / "runtime" / "python" / "bin" / "python3",
-                    executable.parent / "python3",
+                    ([str(executable_dir() / "runtime" / "python" / "bin" / "python3")], "bundled helper runtime"),
+                    ([str(executable_dir() / "python3")], "local helper runtime"),
                 ]
             )
             for launcher in ("python3", "python"):
                 launcher_path = shutil.which(launcher)
                 if launcher_path:
-                    candidates.append(Path(launcher_path))
+                    candidates.append(([launcher_path], "system Python runtime"))
 
-        seen: set[str] = set()
+        seen: set[tuple[str, ...]] = set()
         for candidate in candidates:
-            candidate_str = str(candidate)
-            if not candidate_str or candidate_str in seen:
+            command, label = candidate
+            key = tuple(command)
+            if not command or key in seen:
                 continue
-            seen.add(candidate_str)
-            if candidate.is_file():
-                return [candidate_str, "-m", "pip"]
-        return []
+            seen.add(key)
+
+            head = Path(command[0])
+            if head.is_absolute() and not head.is_file():
+                continue
+            yield command, label
+
+    def _resolve_pip_command(self) -> tuple[list[str], str]:
+        for command, label in self._runtime_candidates():
+            if self._command_supports_pip(command):
+                return [*command, "-m", "pip"], label
+        return [], ""
+
+    def _command_supports_pip(self, command: list[str]) -> bool:
+        cache_key = tuple(command)
+        cached = _PIP_PROBE_CACHE.get(cache_key)
+        if cached is not None:
+            return cached
+
+        try:
+            result = subprocess.run(
+                [*command, "-m", "pip", "--version"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+                timeout=20,
+            )
+            available = result.returncode == 0
+        except (OSError, subprocess.SubprocessError, ValueError):
+            available = False
+
+        _PIP_PROBE_CACHE[cache_key] = available
+        return available
 
     def _can_use_embedded_pip(self) -> bool:
         try:

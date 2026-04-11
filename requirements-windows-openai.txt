@@ -1,0 +1,10 @@
+# Lean Windows runtime dependencies for the OpenAI-first onedir bundle.
+# Optional offline engines are intentionally excluded from this base install.
+
+PyQt6>=6.11.0
+python-dotenv>=1.0.1
+sounddevice>=0.4.6
+numpy>=1.24.0
+websocket-client>=1.8.0
+pyautogui>=0.9.54
+pygetwindow>=0.0.9
