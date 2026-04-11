@@ -6,8 +6,7 @@ Application settings with QSettings persistence.
 import os
 
 from PyQt6.QtCore import QSettings
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
 
 
 @dataclass
@@ -17,7 +16,8 @@ class AppSettings:
     audio_backend: str = "auto"
 
     # STT
-    stt_backend: str = "auto"       # "auto" | "whisper" | "vosk" | "openai_realtime"
+    stt_backend: str = "openai_realtime"       # "auto" | "whisper" | "vosk" | "openai_realtime"
+    openai_api_key: str = ""
     whisper_model: str = "small.en"    # recommended English CPU model
     vosk_model: str = "en-us"
 
@@ -42,6 +42,8 @@ class AppSettings:
     preview_gradient_end: str = "#0f172a"
     context_detection_enabled: bool = True
     context_window_seconds: int = 8
+    developer_mode: bool = False
+    welcome_completed: bool = False
 
     # ── Persistence ───────────────────────────────────────────────────────────
 
@@ -50,6 +52,7 @@ class AppSettings:
         self.audio_device   = qs.value("audio/device",       self.audio_device)
         self.audio_backend  = qs.value("audio/backend",      self.audio_backend)
         self.stt_backend    = qs.value("stt/backend",        self.stt_backend)
+        self.openai_api_key = qs.value("stt/openai_api_key", self.openai_api_key)
         self.whisper_model  = qs.value("stt/whisper_model",  self.whisper_model)
         self.vosk_model     = qs.value("stt/vosk_model",     self.vosk_model)
         self.ew_window_title= qs.value("ew/window_title",    self.ew_window_title)
@@ -78,16 +81,25 @@ class AppSettings:
         self.context_window_seconds = int(
             qs.value("context/window_seconds", self.context_window_seconds)
         )
+        self.developer_mode = qs.value(
+            "ui/developer_mode", self.developer_mode
+        ) in (True, "true")
+        self.welcome_completed = qs.value(
+            "ui/welcome_completed", self.welcome_completed
+        ) in (True, "true")
         self.audio_backend  = os.getenv("VERSE_LISTENER_AUDIO_BACKEND", self.audio_backend)
         self.stt_backend    = os.getenv("VERSE_LISTENER_STT_BACKEND", self.stt_backend)
+        self.openai_api_key = os.getenv("OPENAI_API_KEY", self.openai_api_key)
         self.whisper_model  = os.getenv("VERSE_LISTENER_WHISPER_MODEL", self.whisper_model)
         self.vosk_model     = os.getenv("VERSE_LISTENER_VOSK_MODEL", self.vosk_model)
+        self.apply_runtime_env()
 
     def save(self):
         qs = QSettings()
         qs.setValue("audio/device",      self.audio_device)
         qs.setValue("audio/backend",     self.audio_backend)
         qs.setValue("stt/backend",       self.stt_backend)
+        qs.setValue("stt/openai_api_key", self.openai_api_key)
         qs.setValue("stt/whisper_model", self.whisper_model)
         qs.setValue("stt/vosk_model",    self.vosk_model)
         qs.setValue("ew/window_title",   self.ew_window_title)
@@ -108,4 +120,13 @@ class AppSettings:
         qs.setValue("preview/gradient_end", self.preview_gradient_end)
         qs.setValue("context/enabled", self.context_detection_enabled)
         qs.setValue("context/window_seconds", self.context_window_seconds)
+        qs.setValue("ui/developer_mode", self.developer_mode)
+        qs.setValue("ui/welcome_completed", self.welcome_completed)
         qs.sync()
+        self.apply_runtime_env()
+
+    def apply_runtime_env(self):
+        if self.openai_api_key:
+            os.environ["OPENAI_API_KEY"] = self.openai_api_key
+        else:
+            os.environ.pop("OPENAI_API_KEY", None)
