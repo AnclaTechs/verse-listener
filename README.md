@@ -4,7 +4,9 @@
 
 Built for church AV operators: listen to a sermon in real time, instantly detect any Bible verse reference spoken aloud, and send it directly to EasyWorship with one click (or a hotkey).
 
-![VerseListener](assets/verseListener.jpg)
+<p align="center">
+  <img src="assets/verseListener.jpg" alt="VerseListener" width="900">
+</p>
 
 ---
 
