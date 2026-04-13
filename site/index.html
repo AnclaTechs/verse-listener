@@ -105,7 +105,7 @@
         inset: 0;
         background:
           linear-gradient(180deg, rgba(4, 10, 18, 0.28), rgba(4, 10, 18, 0.9)),
-          url("../assets/worship.jpg") center/cover no-repeat;
+          url("https://downloads.verselistener.com/worship.jpg") center/cover no-repeat;
         opacity: 0.14;
         z-index: -2;
         pointer-events: none;
@@ -1427,7 +1427,7 @@
           <a class="logo" href="#top" aria-label="VerseListener home">
             <img
               class="logo-icon"
-              src="../assets/verseListener_logo.png"
+              src="https://downloads.verselistener.com/verseListener_logo.png"
               alt="VerseListener logo"
             />
             <span> VerseListener </span>
@@ -1658,7 +1658,7 @@
                   class="download-live"
                   :class="{ 'is-pending': !downloadTrackingReady }"
                 >
-                  {{ downloadTrackingReady ? "Cloudflare live" : "Cloudflare fallback" }}
+                  {{ downloadTrackingReady ? "Live" : "Cloudflare fallback" }}
                 </div>
               </div>
               <div class="download-metrics">
@@ -1816,7 +1816,7 @@
             <div class="footer-brand">
               <img
                 class="logo-icon"
-                src="../assets/verseListener_logo.png"
+                src="https://downloads.verselistener.com/verseListener_logo.png"
                 alt="VerseListener logo"
               />
               <div class="footer-brand-copy">
@@ -2112,8 +2112,8 @@
           });
           const downloadTrackingCopy = computed(() =>
             downloadTrackingReady.value
-              ? `Increments whenever the ${activePlatform.value.label} download route redirects through Cloudflare.`
-              : "Tracking is not connected yet, so the button falls back to the GitHub release link for now.",
+              ? `No. of ${activePlatform.value.label} downloads record managed by Cloudflare Durable Object.`
+              : `Download for ${activePlatform.value.label} is not connected yet, routes to GitHub release link for now.`,
           );
 
           const setupSteps = computed(() => {
@@ -2122,11 +2122,14 @@
             const steps = [
               {
                 title: "Download",
-                body: `Download the ${p.archiveLabel} from GitHub Releases and extract it.`,
+                body: `Download the ${p.archiveLabel} file and extract it.`,
               },
               {
                 title: "Open",
-                body: `Open ${p.appLabel}. Allow it through any first-run OS prompt.`,
+                body:
+                  p.id === "windows"
+                    ? `Open ${p.appLabel}. Windows may show a SmartScreen prompt — click "Run anyway".`
+                    : `Open ${p.appLabel}. On Mac, right-click the app and choose Open.`,
               },
               {
                 title: "Split",

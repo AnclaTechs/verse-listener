@@ -11,3 +11,4 @@ build/
 windows_runtime/
 
 node_modules
+.wrangler
