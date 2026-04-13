@@ -1,0 +1,27 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "verselistener-download-metrics",
+  "main": "src/index.js",
+  "compatibility_date": "2026-04-13",
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "DOWNLOAD_COUNTER",
+        "class_name": "DownloadCounter"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["DownloadCounter"]
+    }
+  ],
+  "vars": {
+    "ALLOW_ORIGIN": "https://verselistener.com",
+    "WINDOWS_BUILD_SIZE": "7.9 MB",
+    "MAC_BUILD_SIZE": "Coming soon",
+    "WINDOWS_DOWNLOAD_URL": "https://downloads.verselistener.com/windows/VerseListener.zip",
+    "MAC_DOWNLOAD_URL": ""
+  }
+}
