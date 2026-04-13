@@ -4,6 +4,10 @@
 
 Built for church AV operators: listen to a sermon in real time, instantly detect any Bible verse reference spoken aloud, and send it directly to EasyWorship with one click (or a hotkey).
 
+<p align="center">
+  <img src="assets/verseListener.jpg" alt="VerseListener" width="900">
+</p>
+
 ---
 
 ## Features
@@ -139,6 +143,13 @@ If JACK is not running, VerseListener automatically falls back to sounddevice (P
 python main.py
 ```
 
+On first launch, VerseListener now opens a welcome screen with these paths:
+
+- `Quick Setup` → OpenAI-first setup with API key entry
+- `Install Offline` → in-app add-on manager for optional offline packages
+- `Developer Mode` → advanced-friendly startup path
+- `Skip for now`
+
 ## Recommended Speech-to-Text Setup
 
 For this project, the best default setup is:
@@ -159,7 +170,7 @@ If you need a fully offline fallback:
 
 ## OpenAI Realtime Setup
 
-The app reads these values from `.env`:
+The app can read these values from `.env`, but the API key can also be entered directly in **Settings → Speech Model**:
 
 ```bash
 OPENAI_API_KEY=your_key_here
@@ -172,8 +183,54 @@ OPENAI_REALTIME_PROMPT=...
 Notes:
 
 - `OPENAI_API_KEY` is required for the OpenAI backend
+- the Settings dialog stores the key locally on the machine and applies it to the running app
 - `OPENAI_REALTIME_PROMPT` is a good place to bias scripture names, sermon terms, and punctuation style
 - OpenAI Realtime transcription expects 24 kHz PCM; the app handles resampling before streaming audio
+
+## Optional Add-ons
+
+VerseListener keeps the bundled app lean and lets users install heavier offline tools later from **Settings → Add-ons**.
+
+Optional in-app installs:
+
+- `Vosk` for offline STT
+- `faster-whisper` for offline Whisper fallback
+- `sentence-transformers` for stronger semantic passage matching
+
+Notes:
+
+- estimated sizes are shown in the add-ons manager before install
+- installs go into the user's VerseListener add-ons folder, not into the bundled executable itself
+- restart after install is recommended for the cleanest reload
+- Windows `onedir` builds can bundle a helper Python runtime so in-app installs work even when the target PC does not have Python installed
+
+## Windows Onedir Build
+
+For a lean Windows bundle with OpenAI as the default path:
+
+```bat
+build_windows.bat
+```
+
+What this does:
+
+- installs the lean Windows runtime dependencies from `requirements-windows-openai.txt`
+- builds `VerseListener.exe` with `PyInstaller` using `VerseListener.spec`
+- prepares and bundles a helper Python runtime under `dist\VerseListener\runtime\python`
+
+Why the helper runtime matters:
+
+- the shipped app stays lean and OpenAI-first by default
+- optional add-ons still install later from **Settings → Add-ons**
+- the target PC does not need a separate Python install for those add-ons
+
+The helper runtime is prepared by:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\prepare_windows_runtime.ps1 -PythonVersion 3.12.3 -Force
+```
+
+Use the same Python major/minor version that you build the app with on Windows. `build_windows.bat` will auto-prepare this runtime for you when possible.
 
 ## Verse Preview
 
@@ -198,7 +255,7 @@ VerseListener can also infer a likely Bible passage from what is being preached,
 
 Default behavior:
 
-- context window: `30s`
+- context window: `8s`
 - matcher: local keyword retrieval
 - optional upgrade: install `sentence-transformers` for semantic reranking
 

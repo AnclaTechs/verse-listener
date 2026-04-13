@@ -1,0 +1,3 @@
+# Build-time dependencies for packaging VerseListener on Windows.
+
+pyinstaller>=6.11.0

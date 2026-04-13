@@ -22,12 +22,14 @@ from PyQt6.QtGui import QAction, QKeySequence, QShortcut, QFont
 from core.settings import AppSettings
 from core.bible_detector import BibleDetector
 from core.context_matcher import ContextPassageMatcher, PassageSuggestion
+from core.optional_packages import bootstrap_optional_packages
 from core.transcription import AudioCaptureThread, TranscriptionThread
 from core.easyworship import EasyWorshipController, EasyWorshipConfig
 from ui.transcript_panel import TranscriptPanel
 from ui.queue_panel import VerseQueuePanel
 from ui.settings_dialog import SettingsDialog
 from ui.styles import get_stylesheet
+from ui.welcome_dialog import WelcomeDialog
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +43,8 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.settings = AppSettings()
         self.settings.load()
+        self.settings.apply_runtime_env()
+        bootstrap_optional_packages()
 
         self._detector = BibleDetector()
         self._context_segments: deque[tuple[float, str]] = deque()
@@ -61,6 +65,7 @@ class MainWindow(QMainWindow):
 
         self.setWindowTitle("VerseListener")
         self.resize(1100, 720)
+        QTimer.singleShot(150, self._maybe_show_welcome)
         logger.info("Main window ready")
 
     # ── Builder helpers ───────────────────────────────────────────────────────
@@ -111,8 +116,15 @@ class MainWindow(QMainWindow):
 
         settings_action = QAction("⚙  Settings", self)
         settings_action.setToolTip("Open settings dialog")
-        settings_action.triggered.connect(self._open_settings)
+        settings_action.triggered.connect(lambda checked=False: self._open_settings())
         toolbar.addAction(settings_action)
+
+        welcome_action = QAction("✦  Welcome", self)
+        welcome_action.setToolTip("Reopen the first-run setup experience")
+        welcome_action.triggered.connect(
+            lambda checked=False: self._show_welcome(force=True)
+        )
+        toolbar.addAction(welcome_action)
 
         toolbar.addSeparator()
 
@@ -353,11 +365,21 @@ class MainWindow(QMainWindow):
 
     # ── Settings ──────────────────────────────────────────────────────────────
 
-    def _open_settings(self):
-        dlg = SettingsDialog(self.settings, self)
+    def _open_settings(self, initial_section: str = "audio", focus_target: str = ""):
+        dlg = SettingsDialog(
+            self.settings,
+            self,
+            initial_section=initial_section,
+            focus_target=focus_target,
+        )
+        dlg.reopen_welcome_requested.connect(
+            lambda: self._reopen_welcome_from_settings(dlg)
+        )
         if dlg.exec():
             # Reload settings
             self.settings.load()
+            self.settings.apply_runtime_env()
+            bootstrap_optional_packages()
             self._ew_controller = self._build_ew_controller()
             self._context_matcher = self._build_context_matcher()
             self._reset_context_tracking(clear_ui=False)
@@ -367,6 +389,44 @@ class MainWindow(QMainWindow):
             if self._listening:
                 self._stop_listening()
                 QTimer.singleShot(500, self._start_listening)
+
+    def _reopen_welcome_from_settings(self, dialog: SettingsDialog):
+        dialog.reject()
+        QTimer.singleShot(50, lambda: self._show_welcome(force=True))
+
+    def _maybe_show_welcome(self):
+        if self.settings.welcome_completed:
+            return
+        self._show_welcome()
+
+    def _show_welcome(self, *, force: bool = False):
+        if self._listening:
+            return
+        if not force and self.settings.welcome_completed:
+            return
+
+        dlg = WelcomeDialog(self)
+        if dlg.exec():
+            self.settings.welcome_completed = True
+            if dlg.choice == WelcomeDialog.DEVELOPER_MODE:
+                self.settings.developer_mode = True
+                self.settings.save()
+                self._status_bar.showMessage("Developer mode enabled.", 4000)
+                QTimer.singleShot(50, lambda: self._open_settings("speech"))
+                return
+            if dlg.choice == WelcomeDialog.INSTALL_OFFLINE:
+                self.settings.save()
+                QTimer.singleShot(50, lambda: self._open_settings("addons"))
+                return
+            if dlg.choice == WelcomeDialog.QUICK_SETUP:
+                self.settings.stt_backend = "openai_realtime"
+                self.settings.save()
+                QTimer.singleShot(50, lambda: self._open_settings("speech", "api_key"))
+                return
+            self.settings.save()
+            self._status_bar.showMessage(
+                "Welcome skipped. You can reopen it any time from the toolbar.", 5000
+            )
 
     def _toggle_theme(self):
         self.settings.theme = "light" if self.settings.theme == "dark" else "dark"
