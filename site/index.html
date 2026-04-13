@@ -1429,6 +1429,9 @@
         }
       }
       @media (max-width: 640px) {
+        header {
+          margin-bottom: 124px;
+        }
         .hero {
           padding: 64px 0 48px;
         }
@@ -1436,17 +1439,42 @@
           font-size: 2.4rem;
         }
         .header-inner {
-          flex-direction: column;
-          justify-content: center;
+          justify-content: flex-start;
           padding: 14px 0;
+          min-height: 72px;
         }
         .header-links {
-          width: 100%;
-          flex-wrap: wrap;
+          position: fixed;
+          top: 78px;
+          left: 22px;
+          right: 22px;
+          width: auto;
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 8px;
+          padding: 12px;
+          border-radius: 16px;
+          border: 1px solid var(--border);
+          background: rgba(7, 12, 21, 0.94);
+          box-shadow: 0 20px 44px rgba(0, 0, 0, 0.3);
+          backdrop-filter: blur(18px);
+          transition:
+            opacity 180ms ease,
+            transform 180ms ease,
+            visibility 180ms ease;
+          z-index: 60;
+        }
+        .header-links.mobile-hidden {
+          opacity: 0;
+          visibility: hidden;
+          transform: translateY(-10px);
+          pointer-events: none;
         }
         .nav-link,
-        .repo-pill {
-          flex: 1 1 calc(50% - 8px);
+        .repo-pill,
+        .nav-cta {
+          min-width: 0;
+          width: 100%;
         }
         .btn-primary,
         .btn-ghost {
@@ -1475,7 +1503,10 @@
             />
             <span> VerseListener </span>
           </a>
-          <div class="header-links">
+          <div
+            class="header-links"
+            :class="{ 'mobile-hidden': !showMobileHeaderLinks }"
+          >
             <a class="nav-link" href="#how">How it works</a>
             <a class="nav-link" href="#setup">Setup</a>
             <a
@@ -1939,6 +1970,7 @@
       import {
         computed,
         createApp,
+        onBeforeUnmount,
         onMounted,
         ref,
       } from "https://unpkg.com/vue@3/dist/vue.esm-browser.prod.js";
@@ -2103,6 +2135,7 @@
           const currentPlatform = ref("windows");
           const currentMode = ref("online");
           const showComingSoonModal = ref(false);
+          const showMobileHeaderLinks = ref(true);
           const downloadTrackingReady = ref(false);
           const downloadStats = ref({
             windowsBuildSize: defaultWindowsBuildSize,
@@ -2110,6 +2143,9 @@
             windowsDownloads: null,
             macDownloads: null,
           });
+          let lastScrollY = 0;
+          let scrollListener = null;
+          let resizeListener = null;
           const platformOrder = Object.values(platforms);
           const modeOrder = Object.values(modes);
           const activePlatform = computed(
@@ -2255,8 +2291,51 @@
             }
           }
 
+          function syncMobileHeaderLinks() {
+            if (window.innerWidth > 640) {
+              showMobileHeaderLinks.value = true;
+              lastScrollY = window.scrollY;
+              return;
+            }
+
+            const currentY = Math.max(window.scrollY, 0);
+            const deltaY = currentY - lastScrollY;
+            const topRevealThreshold = 64;
+            const hideThreshold = 96;
+            const directionThreshold = 10;
+
+            if (Math.abs(deltaY) < directionThreshold) {
+              lastScrollY = currentY;
+              return;
+            }
+
+            if (currentY <= topRevealThreshold) {
+              showMobileHeaderLinks.value = true;
+            } else if (deltaY > 0 && currentY > hideThreshold) {
+              showMobileHeaderLinks.value = false;
+            } else if (deltaY < 0) {
+              showMobileHeaderLinks.value = true;
+            }
+
+            lastScrollY = currentY;
+          }
+
           onMounted(() => {
+            lastScrollY = window.scrollY;
+            syncMobileHeaderLinks();
+            scrollListener = () => syncMobileHeaderLinks();
+            resizeListener = () => syncMobileHeaderLinks();
+            window.addEventListener("scroll", scrollListener, { passive: true });
+            window.addEventListener("resize", resizeListener, { passive: true });
             void loadDownloadStats();
+          });
+          onBeforeUnmount(() => {
+            if (scrollListener) {
+              window.removeEventListener("scroll", scrollListener);
+            }
+            if (resizeListener) {
+              window.removeEventListener("resize", resizeListener);
+            }
           });
 
           return {
@@ -2279,6 +2358,7 @@
             platformDownloadsDisplay,
             downloadTrackingCopy,
             showComingSoonModal,
+            showMobileHeaderLinks,
             setupSteps,
             selectPlatform,
             selectMode,
