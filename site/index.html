@@ -1,0 +1,2247 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VerseListener | Smart Scripture Presentation Assistant</title>
+    <meta
+      name="description"
+      content="VerseListener listens to sermons in real time, detects Bible verses, builds context, and hands suggestions back into your scripture presentation workflow."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;700&family=DM+Sans:wght@300;400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://cdn.jsdelivr.net/gh/hung1001/font-awesome-pro@4cac1a6/css/all.css"
+      rel="stylesheet"
+      type="text/css"
+    />
+    <style>
+      /* ── Design tokens ──────────────────────────────────────────────── */
+      :root {
+        --bg: #07111d;
+        --surface: rgba(10, 22, 38, 0.9);
+        --surface-soft: rgba(255, 255, 255, 0.032);
+        --border: rgba(148, 163, 184, 0.14);
+        --border-soft: rgba(148, 163, 184, 0.08);
+        --text: #eef4ff;
+        --muted: #8da4be;
+        --faint: #4a5f78;
+
+        /* CTA — warm amber spotlight, reserved for the main download actions. */
+        --cta: #ffb31f;
+        --cta-hover: #ffc247;
+        --cta-press: #ec9800;
+        --cta-text: #0d1b2a;
+        --cta-shadow: rgba(255, 179, 31, 0.34);
+        --cta-soft: rgba(255, 179, 31, 0.12);
+        --cta-line: rgba(255, 201, 92, 0.38);
+        --cta-highlight: rgba(255, 241, 185, 0.7);
+
+        /* Mode accent — blue default, overridden per mode */
+        --accent: #60a5fa;
+        --accent-soft: rgba(96, 165, 250, 0.13);
+        --accent-line: rgba(96, 165, 250, 0.22);
+
+        --ghost-bg: rgba(255, 255, 255, 0.05);
+        --ghost-border: rgba(148, 163, 184, 0.18);
+        --ghost-hover: rgba(255, 255, 255, 0.09);
+
+        --radius: 14px;
+        --shadow: 0 32px 80px rgba(0, 0, 0, 0.44);
+      }
+
+      .mode-online {
+        --accent: #60a5fa;
+        --accent-soft: rgba(96, 165, 250, 0.13);
+        --accent-line: rgba(96, 165, 250, 0.22);
+      }
+      .mode-vosk {
+        --accent: #2dd4bf;
+        --accent-soft: rgba(45, 212, 191, 0.13);
+        --accent-line: rgba(45, 212, 191, 0.22);
+      }
+      .mode-whisper {
+        --accent: #a78bfa;
+        --accent-soft: rgba(167, 139, 250, 0.13);
+        --accent-line: rgba(167, 139, 250, 0.22);
+      }
+
+      /* ── Reset ──────────────────────────────────────────────────────── */
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+      html {
+        scroll-behavior: smooth;
+      }
+      body {
+        margin: 0;
+        font-family: "DM Sans", sans-serif;
+        font-weight: 300;
+        color: var(--text);
+        background:
+          radial-gradient(
+            ellipse at 8% 0%,
+            rgba(29, 78, 216, 0.26) 0%,
+            transparent 34%
+          ),
+          radial-gradient(
+            ellipse at 92% 0%,
+            rgba(15, 118, 110, 0.18) 0%,
+            transparent 26%
+          ),
+          linear-gradient(180deg, #06111e 0%, #07111d 40%, #040a13 100%);
+        min-height: 100vh;
+        overflow-x: hidden;
+      }
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        background:
+          linear-gradient(180deg, rgba(4, 10, 18, 0.28), rgba(4, 10, 18, 0.9)),
+          url("../assets/worship.jpg") center/cover no-repeat;
+        opacity: 0.14;
+        z-index: -2;
+        pointer-events: none;
+      }
+      body::after {
+        content: "";
+        position: fixed;
+        inset: 0;
+        background:
+          linear-gradient(
+            90deg,
+            rgba(255, 255, 255, 0.018) 1px,
+            transparent 1px
+          ),
+          linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px);
+        background-size: 42px 42px;
+        mask-image: linear-gradient(
+          180deg,
+          rgba(0, 0, 0, 0.6),
+          transparent 88%
+        );
+        z-index: -1;
+        pointer-events: none;
+      }
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+      button {
+        font: inherit;
+        cursor: pointer;
+      }
+      img {
+        display: block;
+        max-width: 100%;
+      }
+      [v-cloak] {
+        display: none;
+      }
+
+      .wrap {
+        width: min(1120px, calc(100% - 44px));
+        margin: 0 auto;
+        position: relative;
+        z-index: 1;
+      }
+
+      /* ── Header ─────────────────────────────────────────────────────── */
+      header {
+        position: sticky;
+        top: 0;
+        z-index: 50;
+        border-bottom: 1px solid var(--border-soft);
+        backdrop-filter: blur(22px);
+        background: rgba(7, 12, 21, 0.8);
+      }
+      .header-inner {
+        min-height: 70px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+      }
+      .logo {
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+        font-family: "Playfair Display", serif;
+        font-size: 1.12rem;
+        letter-spacing: 0.01em;
+      }
+      .logo-icon {
+        width: 38px;
+        height: 38px;
+        border-radius: 11px;
+        padding: 7px;
+        background: linear-gradient(
+          160deg,
+          rgba(37, 99, 168, 0.35),
+          rgba(30, 58, 95, 0.55)
+        );
+        border: 1px solid rgba(96, 165, 250, 0.18);
+      }
+      .logo span {
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+      }
+      .logo small {
+        font-family: "DM Sans", sans-serif;
+        font-size: 0.67rem;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      .header-links {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      /* ── Shared button base ──────────────────────────────────────────── */
+      .nav-link,
+      .nav-cta,
+      .footer-link,
+      .btn-primary,
+      .btn-ghost,
+      .repo-pill,
+      .dl-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        min-height: 42px;
+        padding: 0 16px;
+        border-radius: 11px;
+        font-size: 0.875rem;
+        border: 1px solid transparent;
+        transition:
+          transform 150ms ease,
+          box-shadow 150ms ease,
+          border-color 150ms ease,
+          background 150ms ease,
+          color 150ms ease;
+      }
+      .btn-icon {
+        width: 16px;
+        height: 16px;
+        flex: 0 0 16px;
+      }
+      .nav-link:focus-visible,
+      .nav-cta:focus-visible,
+      .footer-link:focus-visible,
+      .btn-primary:focus-visible,
+      .btn-ghost:focus-visible,
+      .repo-pill:focus-visible,
+      .dl-btn:focus-visible,
+      .hero-mode:focus-visible,
+      .platform-btn:focus-visible,
+      .mode-card:focus-visible,
+      .queue-send:focus-visible {
+        outline: none;
+      }
+
+      /* Ghost */
+      .nav-link,
+      .repo-pill,
+      .btn-ghost,
+      .footer-link {
+        background: var(--ghost-bg);
+        border-color: var(--ghost-border);
+        color: var(--muted);
+      }
+      .nav-link:hover,
+      .repo-pill:hover,
+      .btn-ghost:hover,
+      .footer-link:hover {
+        transform: translateY(-1px);
+        color: var(--text);
+        background: var(--ghost-hover);
+        border-color: rgba(148, 163, 184, 0.28);
+      }
+      .repo-pill svg {
+        width: 16px;
+        height: 16px;
+      }
+
+      /* ── PRIMARY CTA — amber ─────────────────────────────────────────── */
+      .nav-cta {
+        background: linear-gradient(
+          180deg,
+          rgba(255, 191, 73, 0.2),
+          rgba(255, 179, 31, 0.12)
+        );
+        border-color: var(--cta-line);
+        color: #ffd78c;
+        font-weight: 600;
+        box-shadow: 0 10px 22px rgba(255, 179, 31, 0.12);
+      }
+      .nav-cta:hover {
+        transform: translateY(-1px);
+        background: linear-gradient(
+          180deg,
+          rgba(255, 201, 92, 0.26),
+          rgba(255, 179, 31, 0.16)
+        );
+        border-color: rgba(255, 214, 122, 0.46);
+        color: #ffe7b8;
+        box-shadow: 0 14px 28px rgba(255, 179, 31, 0.16);
+      }
+      .nav-cta:focus-visible {
+        border-color: rgba(255, 223, 145, 0.62);
+        box-shadow:
+          0 0 0 4px rgba(255, 179, 31, 0.14),
+          0 10px 24px rgba(255, 179, 31, 0.18);
+      }
+
+      .btn-primary,
+      .dl-btn {
+        position: relative;
+        overflow: hidden;
+        background: linear-gradient(
+          180deg,
+          #ffd36e 0%,
+          var(--cta) 45%,
+          var(--cta-press) 100%
+        );
+        border-color: rgba(255, 221, 138, 0.52);
+        color: var(--cta-text);
+        font-weight: 700;
+        letter-spacing: 0.012em;
+        box-shadow:
+          0 14px 34px var(--cta-shadow),
+          0 1px 0 var(--cta-highlight) inset,
+          0 0 0 1px rgba(255, 196, 69, 0.08);
+      }
+      .btn-primary::before,
+      .dl-btn::before {
+        content: "";
+        position: absolute;
+        inset: 1px 1px auto 1px;
+        height: 52%;
+        border-radius: 10px 10px 14px 14px;
+        background: linear-gradient(
+          180deg,
+          rgba(255, 255, 255, 0.34),
+          rgba(255, 255, 255, 0.04)
+        );
+        pointer-events: none;
+      }
+      .btn-primary:hover,
+      .dl-btn:hover {
+        transform: translateY(-2px);
+        background: linear-gradient(
+          180deg,
+          #ffd97f 0%,
+          var(--cta-hover) 45%,
+          #f0a100 100%
+        );
+        box-shadow:
+          0 18px 40px rgba(255, 179, 31, 0.4),
+          0 1px 0 rgba(255, 244, 205, 0.8) inset,
+          0 0 0 1px rgba(255, 214, 122, 0.16);
+      }
+      .btn-primary:active,
+      .dl-btn:active {
+        transform: translateY(0);
+        background: linear-gradient(
+          180deg,
+          #ffcb5b 0%,
+          #f2ab1d 45%,
+          #de8d00 100%
+        );
+        box-shadow:
+          0 6px 16px rgba(255, 179, 31, 0.28),
+          0 1px 0 rgba(255, 244, 205, 0.36) inset;
+      }
+      .btn-primary:focus-visible,
+      .dl-btn:focus-visible {
+        border-color: rgba(255, 227, 160, 0.78);
+        box-shadow:
+          0 0 0 4px rgba(255, 179, 31, 0.16),
+          0 18px 42px rgba(255, 179, 31, 0.42),
+          0 1px 0 rgba(255, 244, 205, 0.8) inset;
+      }
+
+      /* ── Hero ────────────────────────────────────────────────────────── */
+      .hero {
+        padding: 88px 0 68px;
+      }
+      .hero-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(340px, 0.96fr);
+        gap: 56px;
+        align-items: center;
+        margin-bottom: 28px;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--accent);
+        font-size: 0.84rem;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        margin-bottom: 18px;
+        transition: color 0.3s;
+      }
+      .eyebrow::before {
+        content: "";
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--accent);
+        box-shadow: 0 0 10px var(--accent);
+        animation: pulse 2s ease-in-out infinite;
+      }
+
+      h1,
+      h2 {
+        font-family: "Playfair Display", serif;
+        font-weight: 500;
+        letter-spacing: -0.02em;
+      }
+      h1 {
+        font-size: clamp(2.8rem, 5vw, 4.2rem);
+        line-height: 1.06;
+        margin: 0 0 18px;
+      }
+      h1 em {
+        font-style: italic;
+        color: var(--accent);
+        transition: color 0.3s;
+      }
+
+      .hero-sub {
+        font-size: 1.02rem;
+        line-height: 1.78;
+        color: var(--muted);
+        max-width: 510px;
+        margin: 0;
+      }
+
+      .btn-row {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin: 32px 0 26px;
+      }
+
+      .mode-shell {
+        padding: 18px;
+        border-radius: 20px;
+        border: 1px solid var(--border-soft);
+        background:
+          linear-gradient(
+            180deg,
+            rgba(255, 255, 255, 0.042),
+            rgba(255, 255, 255, 0.02)
+          ),
+          linear-gradient(180deg, rgba(9, 19, 33, 0.56), rgba(7, 15, 27, 0.34));
+        box-shadow:
+          0 20px 44px rgba(0, 0, 0, 0.22),
+          0 1px 0 rgba(255, 255, 255, 0.04) inset;
+      }
+      .mode-shell-head {
+        margin-bottom: 14px;
+      }
+      .mode-kicker {
+        font-size: 0.76rem;
+        font-weight: 600;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--faint);
+        margin-bottom: 6px;
+      }
+      .mode-summary {
+        color: var(--muted);
+        font-size: 0.91rem;
+        line-height: 1.72;
+        max-width: 640px;
+      }
+      .mode-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      /* Chips & cards */
+      .hero-mode,
+      .platform-btn,
+      .mode-card {
+        border-radius: 11px;
+        border: 1px solid var(--ghost-border);
+        background: var(--ghost-bg);
+        color: var(--muted);
+        transition:
+          background 150ms,
+          border-color 150ms,
+          color 150ms,
+          transform 150ms;
+      }
+      .hero-mode {
+        position: relative;
+        min-height: 112px;
+        padding: 14px 14px 13px;
+        text-align: left;
+        overflow: hidden;
+        background:
+          linear-gradient(
+            180deg,
+            rgba(255, 255, 255, 0.045),
+            rgba(255, 255, 255, 0.02)
+          ),
+          rgba(10, 20, 34, 0.44);
+      }
+      .hero-mode::before {
+        content: "";
+        position: absolute;
+        inset: 0 0 auto;
+        height: 1px;
+        background: linear-gradient(
+          90deg,
+          transparent,
+          var(--accent-line),
+          transparent
+        );
+        opacity: 0.75;
+      }
+      .hero-mode:hover,
+      .platform-btn:hover,
+      .mode-card:hover {
+        transform: translateY(-1px);
+        border-color: var(--accent-line);
+        color: var(--text);
+      }
+      .hero-mode:hover {
+        background:
+          linear-gradient(
+            180deg,
+            rgba(255, 255, 255, 0.06),
+            rgba(255, 255, 255, 0.024)
+          ),
+          rgba(10, 20, 34, 0.56);
+        box-shadow: 0 16px 28px rgba(0, 0, 0, 0.16);
+      }
+      .hero-mode.active,
+      .platform-btn.active,
+      .mode-card.active {
+        background: var(--accent-soft);
+        border-color: var(--accent-line);
+        color: var(--accent);
+      }
+      .hero-mode.active {
+        background:
+          linear-gradient(
+            180deg,
+            rgba(255, 255, 255, 0.06),
+            rgba(255, 255, 255, 0.016)
+          ),
+          linear-gradient(180deg, var(--accent-soft), rgba(10, 20, 34, 0.5));
+        box-shadow:
+          0 18px 34px rgba(0, 0, 0, 0.18),
+          0 0 0 1px rgba(255, 255, 255, 0.03) inset;
+      }
+      .hero-mode:focus-visible {
+        border-color: var(--accent-line);
+        box-shadow:
+          0 0 0 4px rgba(96, 165, 250, 0.12),
+          0 14px 28px rgba(0, 0, 0, 0.18);
+      }
+      .hero-mode-top {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 10px;
+      }
+      .hero-mode-icon {
+        width: 34px;
+        height: 34px;
+        flex: 0 0 34px;
+        display: grid;
+        place-items: center;
+        border-radius: 11px;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.07);
+        color: var(--accent);
+      }
+      .hero-mode-icon svg {
+        width: 17px;
+        height: 17px;
+      }
+      .hero-mode-title {
+        font-size: 0.86rem;
+        font-weight: 600;
+        color: var(--text);
+        line-height: 1.35;
+      }
+      .hero-mode-copy {
+        margin: 0;
+        font-size: 0.78rem;
+        line-height: 1.58;
+        color: var(--muted);
+      }
+
+      /* ── Preview card ─────────────────────────────────────────────────── */
+      .hero-stack {
+        position: relative;
+        min-height: 520px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        perspective: 1600px;
+      }
+      .ambient-card {
+        position: absolute;
+        inset: 30px 16px 46px 64px;
+        border-radius: 22px;
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.07), transparent 34%),
+          linear-gradient(180deg, rgba(10, 30, 55, 0.7), rgba(6, 14, 26, 0.88)),
+          url("../assets/verseListener.jpg") center/cover no-repeat;
+        border: 1px solid rgba(255, 255, 255, 0.07);
+        transform: translate3d(0, 14px, -90px) rotateY(-13deg) rotateX(7deg);
+        opacity: 0.28;
+        pointer-events: none;
+        box-shadow: var(--shadow);
+      }
+      .preview-card {
+        width: min(100%, 510px);
+        background: linear-gradient(
+          180deg,
+          rgba(9, 19, 33, 0.97),
+          rgba(7, 15, 27, 0.94)
+        );
+        border: 1px solid var(--border);
+        border-radius: 22px;
+        overflow: hidden;
+        box-shadow:
+          0 44px 90px rgba(0, 0, 0, 0.5),
+          0 0 0 1px rgba(96, 165, 250, 0.05);
+        transform: rotateY(-10deg) rotateX(6deg);
+        backdrop-filter: blur(20px);
+      }
+      .preview-bar {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        padding: 13px 17px;
+        border-bottom: 1px solid var(--border-soft);
+        background: rgba(255, 255, 255, 0.02);
+      }
+      .pdot {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+      }
+      .pdot-r {
+        background: #ff5f57;
+      }
+      .pdot-y {
+        background: #febc2e;
+      }
+      .pdot-g {
+        background: #28c840;
+      }
+      .preview-title {
+        margin-left: 8px;
+        font-size: 0.8rem;
+        color: var(--faint);
+      }
+      .preview-body {
+        padding: 16px;
+        display: grid;
+        gap: 13px;
+      }
+      .queue-label {
+        font-size: 0.7rem;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--faint);
+        margin-bottom: 6px;
+      }
+      .preview-transcript {
+        background: var(--surface-soft);
+        border: 1px solid var(--border-soft);
+        border-radius: 12px;
+        padding: 13px 15px;
+        font-size: 0.86rem;
+        line-height: 1.7;
+        color: var(--muted);
+      }
+      .preview-transcript mark {
+        background: var(--accent-soft);
+        color: var(--accent);
+        border-radius: 5px;
+        padding: 1px 5px;
+      }
+      .preview-queue {
+        display: grid;
+        gap: 8px;
+      }
+      .queue-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 11px 13px;
+        border-radius: 12px;
+        background: var(--surface-soft);
+        border: 1px solid var(--border-soft);
+      }
+      .queue-item strong {
+        color: var(--accent);
+        font-weight: 500;
+      }
+      .queue-item span {
+        color: var(--muted);
+        font-size: 0.75rem;
+      }
+      /* Send button follows the active mode accent so it does not compete with the primary download CTAs. */
+      .queue-send {
+        min-height: 30px;
+        padding: 0 11px;
+        border-radius: 8px;
+        background: var(--accent-soft);
+        border: 1px solid var(--accent-line);
+        color: var(--accent);
+        font-size: 0.74rem;
+        font-weight: 500;
+        transition:
+          background 150ms,
+          border-color 150ms;
+      }
+      .queue-send:hover {
+        background: rgba(255, 255, 255, 0.08);
+        border-color: var(--accent-line);
+      }
+
+      .preview-status {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        border-top: 1px solid var(--border-soft);
+        padding-top: 11px;
+        font-size: 0.77rem;
+        color: var(--muted);
+      }
+      .status-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--accent);
+        box-shadow: 0 0 8px var(--accent);
+        animation: pulse 2s ease-in-out infinite;
+      }
+
+      /* ── Pillars ─────────────────────────────────────────────────────── */
+      .pillars,
+      .setup {
+        padding: 64px 0;
+      }
+      .section-label {
+        font-size: 0.74rem;
+        font-weight: 500;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin-bottom: 12px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .section-label::after {
+        content: "";
+        flex: 1;
+        max-width: 44px;
+        height: 1px;
+        background: var(--border);
+      }
+      h2 {
+        font-size: clamp(1.9rem, 3vw, 2.75rem);
+        line-height: 1.12;
+        margin: 0 0 8px;
+        max-width: 600px;
+      }
+      .section-copy {
+        color: var(--muted);
+        line-height: 1.75;
+        font-size: 0.92rem;
+        max-width: 540px;
+      }
+
+      .flow-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 18px;
+        margin-top: 38px;
+      }
+      .flow-stage {
+        --flow-accent: #f2b84b;
+        --flow-soft: rgba(242, 184, 75, 0.14);
+        --flow-line: rgba(242, 184, 75, 0.28);
+        position: relative;
+        padding: 28px 24px 24px;
+        border-radius: 22px;
+        border: 1px solid var(--border);
+        background:
+          radial-gradient(circle at 18% 14%, var(--flow-soft), transparent 36%),
+          linear-gradient(
+            180deg,
+            rgba(255, 255, 255, 0.045),
+            rgba(255, 255, 255, 0.016)
+          ),
+          linear-gradient(180deg, rgba(10, 22, 38, 0.96), rgba(8, 18, 31, 0.94));
+        box-shadow:
+          0 28px 56px rgba(0, 0, 0, 0.26),
+          0 1px 0 rgba(255, 255, 255, 0.04) inset,
+          0 0 0 1px rgba(255, 255, 255, 0.02) inset;
+        overflow: visible;
+      }
+      .flow-stage.flow-listen {
+        --flow-accent: #f2b84b;
+        --flow-soft: rgba(242, 184, 75, 0.14);
+        --flow-line: rgba(242, 184, 75, 0.28);
+      }
+      .flow-stage.flow-understand {
+        --flow-accent: #f2b84b;
+        --flow-soft: rgba(242, 184, 75, 0.14);
+        --flow-line: rgba(242, 184, 75, 0.28);
+      }
+      .flow-stage.flow-handoff {
+        --flow-accent: #f2b84b;
+        --flow-soft: rgba(242, 184, 75, 0.14);
+        --flow-line: rgba(242, 184, 75, 0.28);
+      }
+      .flow-stage::after {
+        content: "";
+        position: absolute;
+        top: 86px;
+        right: -26px;
+        width: 34px;
+        height: 2px;
+        background: linear-gradient(90deg, var(--flow-line), transparent);
+        opacity: 0.95;
+      }
+      .flow-stage::before {
+        content: "";
+        position: absolute;
+        top: 80px;
+        right: -18px;
+        width: 12px;
+        height: 12px;
+        border-top: 2px solid var(--flow-line);
+        border-right: 2px solid var(--flow-line);
+        transform: rotate(45deg);
+        opacity: 0.9;
+      }
+      .flow-stage:last-child::before,
+      .flow-stage:last-child::after {
+        display: none;
+      }
+      .flow-visual {
+        position: relative;
+        width: 116px;
+        height: 116px;
+        margin-bottom: 18px;
+      }
+      .flow-shadow {
+        position: absolute;
+        left: 18px;
+        right: 18px;
+        bottom: 10px;
+        height: 20px;
+        border-radius: 50%;
+        background: rgba(0, 0, 0, 0.3);
+        filter: blur(12px);
+      }
+      .flow-ring {
+        position: absolute;
+        inset: 12px;
+        border-radius: 32px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        background:
+          linear-gradient(
+            180deg,
+            rgba(255, 255, 255, 0.08),
+            rgba(255, 255, 255, 0.015)
+          ),
+          rgba(8, 16, 29, 0.6);
+        transform: translateY(8px);
+        box-shadow: 0 0 0 1px var(--flow-line) inset;
+      }
+      .flow-disc {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        border-radius: 34px;
+        background:
+          radial-gradient(
+            circle at 30% 24%,
+            rgba(255, 255, 255, 0.18),
+            transparent 30%
+          ),
+          radial-gradient(circle at 72% 76%, var(--flow-soft), transparent 34%),
+          linear-gradient(
+            180deg,
+            rgba(255, 255, 255, 0.11),
+            rgba(255, 255, 255, 0.02)
+          ),
+          linear-gradient(180deg, rgba(19, 39, 67, 0.98), rgba(8, 16, 28, 0.98));
+        border: 1px solid var(--flow-line);
+        box-shadow:
+          0 18px 34px rgba(0, 0, 0, 0.34),
+          0 1px 0 rgba(255, 255, 255, 0.08) inset,
+          0 0 28px var(--flow-soft);
+      }
+      .flow-disc i {
+        font-size: 34px;
+        line-height: 1;
+        color: var(--flow-accent);
+        text-shadow: 0 0 18px var(--flow-soft);
+      }
+      .flow-number {
+        display: inline-flex;
+        align-items: center;
+        min-height: 28px;
+        padding: 0 10px;
+        border-radius: 999px;
+        background: var(--flow-soft);
+        border: 1px solid var(--flow-line);
+        color: var(--flow-accent);
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        margin-bottom: 12px;
+      }
+      .flow-stage h3 {
+        margin: 0 0 10px;
+        font-size: 1.02rem;
+        font-weight: 600;
+      }
+      .flow-stage p {
+        margin: 0;
+        font-size: 0.88rem;
+        line-height: 1.7;
+        color: var(--muted);
+      }
+
+      /* ── Setup ───────────────────────────────────────────────────────── */
+      .download-strip {
+        margin-top: 26px;
+        padding: 18px 20px;
+        border-radius: 22px;
+        border: 1px solid var(--border);
+        background:
+          radial-gradient(
+            circle at 0% 0%,
+            rgba(242, 184, 75, 0.16),
+            transparent 34%
+          ),
+          linear-gradient(
+            180deg,
+            rgba(255, 255, 255, 0.05),
+            rgba(255, 255, 255, 0.016)
+          ),
+          linear-gradient(180deg, rgba(10, 22, 38, 0.96), rgba(8, 18, 31, 0.94));
+        box-shadow:
+          0 24px 52px rgba(0, 0, 0, 0.22),
+          0 1px 0 rgba(255, 255, 255, 0.04) inset;
+      }
+      .download-strip-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .download-kicker {
+        font-size: 0.75rem;
+        font-weight: 600;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--faint);
+      }
+      .download-live {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 30px;
+        padding: 0 12px;
+        border-radius: 999px;
+        background: rgba(242, 184, 75, 0.12);
+        border: 1px solid rgba(242, 184, 75, 0.28);
+        color: #ffd78c;
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      .download-live::before {
+        content: "";
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: currentColor;
+        box-shadow: 0 0 10px currentColor;
+      }
+      .download-live.is-pending {
+        background: rgba(255, 255, 255, 0.05);
+        border-color: var(--ghost-border);
+        color: var(--muted);
+      }
+      .download-metrics {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+        margin-top: 14px;
+      }
+      .download-metric {
+        padding: 16px 18px;
+        border-radius: 16px;
+        border: 1px solid var(--border-soft);
+        background:
+          linear-gradient(
+            180deg,
+            rgba(255, 255, 255, 0.045),
+            rgba(255, 255, 255, 0.015)
+          ),
+          rgba(9, 19, 33, 0.58);
+      }
+      .download-metric-label {
+        display: block;
+        margin-bottom: 8px;
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--faint);
+      }
+      .download-metric strong {
+        display: block;
+        margin-bottom: 6px;
+        font-family: "Playfair Display", serif;
+        font-size: clamp(1.5rem, 2.5vw, 2.15rem);
+        line-height: 1;
+        color: #fff0c4;
+        text-shadow: 0 0 20px rgba(242, 184, 75, 0.12);
+      }
+      .download-metric p {
+        margin: 0;
+        font-size: 0.83rem;
+        line-height: 1.65;
+        color: var(--muted);
+      }
+
+      .coming-soon-backdrop {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        background: rgba(3, 7, 13, 0.72);
+        backdrop-filter: blur(14px);
+        z-index: 120;
+      }
+      .coming-soon-modal {
+        width: min(480px, 100%);
+        padding: 24px;
+        border-radius: 24px;
+        border: 1px solid var(--border);
+        background:
+          radial-gradient(
+            circle at 0% 0%,
+            rgba(242, 184, 75, 0.16),
+            transparent 34%
+          ),
+          linear-gradient(
+            180deg,
+            rgba(255, 255, 255, 0.05),
+            rgba(255, 255, 255, 0.018)
+          ),
+          linear-gradient(180deg, rgba(10, 22, 38, 0.98), rgba(8, 18, 31, 0.96));
+        box-shadow:
+          0 30px 72px rgba(0, 0, 0, 0.36),
+          0 1px 0 rgba(255, 255, 255, 0.05) inset;
+      }
+      .coming-soon-badge {
+        display: inline-flex;
+        align-items: center;
+        min-height: 30px;
+        padding: 0 12px;
+        border-radius: 999px;
+        background: rgba(242, 184, 75, 0.12);
+        border: 1px solid rgba(242, 184, 75, 0.28);
+        color: #ffd78c;
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      .coming-soon-modal h3 {
+        margin: 14px 0 10px;
+        font-family: "Playfair Display", serif;
+        font-size: 1.7rem;
+        line-height: 1.12;
+      }
+      .coming-soon-modal p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.75;
+        font-size: 0.92rem;
+      }
+      .coming-soon-actions {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-top: 18px;
+      }
+      .coming-soon-actions .btn-primary,
+      .coming-soon-actions .btn-ghost {
+        min-height: 44px;
+      }
+
+      .setup-grid {
+        display: grid;
+        grid-template-columns: 330px 1fr;
+        gap: 22px;
+        margin-top: 38px;
+      }
+      .setup-selector,
+      .setup-steps {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        box-shadow: var(--shadow);
+      }
+      .setup-selector {
+        padding: 24px;
+        height: fit-content;
+      }
+      .setup-selector h3,
+      .setup-steps h3 {
+        margin: 0;
+        font-weight: 500;
+      }
+      .setup-selector > p,
+      .setup-steps > p {
+        color: var(--muted);
+        line-height: 1.65;
+        font-size: 0.875rem;
+        margin-top: 6px;
+      }
+      .sel-label {
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: var(--faint);
+        margin: 18px 0 8px;
+      }
+      .platform-row {
+        display: flex;
+        gap: 8px;
+      }
+      .platform-btn {
+        flex: 1;
+        min-height: 42px;
+        padding: 0 10px;
+        font-size: 0.84rem;
+      }
+      .mode-cards {
+        display: grid;
+        gap: 8px;
+        margin-bottom: 16px;
+      }
+      .mode-card {
+        text-align: left;
+        padding: 13px;
+      }
+      .mode-card strong {
+        display: block;
+        font-size: 0.85rem;
+        font-weight: 500;
+        margin-bottom: 3px;
+      }
+      .mode-card small {
+        display: block;
+        color: var(--muted);
+        font-size: 0.77rem;
+        line-height: 1.5;
+      }
+
+      .selector-note {
+        border-radius: 12px;
+        padding: 13px;
+        background: var(--surface-soft);
+        border: 1px solid var(--border-soft);
+        margin-top: 12px;
+      }
+      .selector-note strong {
+        display: block;
+        font-size: 0.83rem;
+        margin-bottom: 5px;
+      }
+      .selector-note p {
+        margin: 0;
+        font-size: 0.79rem;
+        line-height: 1.55;
+        color: var(--muted);
+      }
+
+      /* Full-width download button — amber, prominent */
+      .dl-btn {
+        width: 100%;
+        margin-top: 16px;
+        font-size: 0.875rem;
+        min-height: 48px;
+        border-radius: 12px;
+      }
+
+      .setup-steps {
+        padding: 28px;
+      }
+      .step-head {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-bottom: 16px;
+      }
+      .step-badge {
+        display: inline-flex;
+        align-items: center;
+        min-height: 32px;
+        padding: 0 12px;
+        border-radius: 999px;
+        background: var(--accent-soft);
+        border: 1px solid var(--accent-line);
+        color: var(--accent);
+        font-size: 0.72rem;
+        font-weight: 500;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      .steps-list {
+        display: grid;
+        gap: 9px;
+        margin-top: 22px;
+      }
+      .step {
+        display: grid;
+        grid-template-columns: 32px 1fr;
+        gap: 13px;
+        align-items: start;
+        padding: 13px;
+        border-radius: 13px;
+        background: var(--surface-soft);
+        border: 1px solid var(--border-soft);
+      }
+      .step-n {
+        width: 32px;
+        height: 32px;
+        border-radius: 9px;
+        display: grid;
+        place-items: center;
+        background: var(--accent-soft);
+        border: 1px solid var(--accent-line);
+        color: var(--accent);
+        font-size: 0.78rem;
+        font-weight: 500;
+      }
+      .step p {
+        margin: 0;
+        font-size: 0.85rem;
+        line-height: 1.62;
+        color: var(--muted);
+      }
+      .step p strong {
+        color: var(--text);
+        font-weight: 500;
+      }
+
+      .hint,
+      .support {
+        border-radius: 14px;
+        padding: 16px;
+        margin-top: 16px;
+        background: var(--surface-soft);
+        border: 1px solid var(--border-soft);
+      }
+      .hint {
+        font-size: 0.82rem;
+        line-height: 1.65;
+        color: var(--muted);
+      }
+      .hint strong,
+      .support strong {
+        color: var(--text);
+      }
+      .support ul {
+        margin: 10px 0 0;
+        padding-left: 18px;
+        color: var(--muted);
+        line-height: 1.72;
+        font-size: 0.83rem;
+      }
+      .support li + li {
+        margin-top: 5px;
+      }
+      .support .btn-row {
+        margin: 14px 0 0;
+      }
+
+      /* ── Footer ──────────────────────────────────────────────────────── */
+      footer {
+        padding: 22px 0 44px;
+        border-top: 1px solid var(--border-soft);
+      }
+      .footer-shell {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        padding: 22px 24px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        flex-wrap: wrap;
+      }
+      .footer-brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .footer-brand-copy {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .footer-brand-copy strong {
+        font-family: "Playfair Display", serif;
+        font-size: 1rem;
+      }
+      .footer-brand-copy span {
+        font-size: 0.79rem;
+        color: var(--muted);
+        font-style: italic;
+      }
+      .footer-links {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.38;
+        }
+      }
+
+      /* ── Responsive ──────────────────────────────────────────────────── */
+      @media (max-width: 980px) {
+        .hero-grid,
+        .setup-grid,
+        .flow-grid {
+          grid-template-columns: 1fr;
+        }
+        .hero-stack {
+          min-height: 460px;
+        }
+        .preview-card {
+          transform: none;
+          width: 100%;
+        }
+        .ambient-card {
+          display: none;
+        }
+        .flow-stage::before,
+        .flow-stage::after {
+          display: none;
+        }
+      }
+      @media (max-width: 760px) {
+        .mode-grid {
+          grid-template-columns: 1fr;
+        }
+        .hero-mode {
+          min-height: auto;
+        }
+        .download-metrics {
+          grid-template-columns: 1fr;
+        }
+      }
+      @media (max-width: 640px) {
+        .hero {
+          padding: 64px 0 48px;
+        }
+        h1 {
+          font-size: 2.4rem;
+        }
+        .header-inner {
+          flex-direction: column;
+          justify-content: center;
+          padding: 14px 0;
+        }
+        .header-links {
+          width: 100%;
+          flex-wrap: wrap;
+        }
+        .nav-link,
+        .repo-pill {
+          flex: 1 1 calc(50% - 8px);
+        }
+        .btn-primary,
+        .btn-ghost {
+          flex: 1 1 100%;
+          justify-content: center;
+        }
+        .coming-soon-actions .btn-primary,
+        .coming-soon-actions .btn-ghost {
+          width: 100%;
+        }
+        .footer-shell {
+          align-items: flex-start;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app" v-cloak :class="`mode-${currentMode}`">
+      <header>
+        <div class="wrap header-inner">
+          <a class="logo" href="#top" aria-label="VerseListener home">
+            <img
+              class="logo-icon"
+              src="../assets/verseListener_logo.png"
+              alt="VerseListener logo"
+            />
+            <span> VerseListener </span>
+          </a>
+          <div class="header-links">
+            <a class="nav-link" href="#how">How it works</a>
+            <a class="nav-link" href="#setup">Setup</a>
+            <a
+              class="repo-pill"
+              :href="repoUrl"
+              target="_blank"
+              rel="noreferrer"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
+                <path
+                  d="M12 .5a12 12 0 0 0-3.8 23.38c.6.11.82-.26.82-.57v-2.23c-3.34.73-4.04-1.42-4.04-1.42-.55-1.37-1.33-1.73-1.33-1.73-1.09-.74.08-.72.08-.72 1.2.09 1.84 1.22 1.84 1.22 1.08 1.82 2.84 1.3 3.53.99.11-.77.42-1.29.76-1.58-2.66-.3-5.46-1.31-5.46-5.85 0-1.29.47-2.35 1.23-3.18-.12-.3-.53-1.52.12-3.16 0 0 1.01-.32 3.3 1.21a11.7 11.7 0 0 1 6 0c2.29-1.53 3.29-1.21 3.29-1.21.65 1.64.24 2.86.12 3.16.77.83 1.23 1.89 1.23 3.18 0 4.56-2.8 5.54-5.48 5.84.43.37.81 1.09.81 2.21v3.28c0 .31.22.68.83.56A12 12 0 0 0 12 .5Z"
+                ></path>
+              </svg>
+              <span>GitHub</span>
+            </a>
+            <a class="nav-cta" href="#setup">Download</a>
+          </div>
+        </div>
+      </header>
+
+      <main id="top">
+        <section class="hero">
+          <div class="wrap">
+            <div class="hero-grid">
+              <div class="hero-copy">
+                <div class="eyebrow">
+                  Smart Scripture presentation assistant
+                </div>
+                <h1>
+                  Let the sermon flow.<br /><em>Let the verses surface.</em>
+                </h1>
+                <p class="hero-sub">
+                  VerseListener works beside the scripture presentation tool
+                  your team already uses. It listens in real time, detects Bible
+                  verses, builds context, and hands suggestions back without
+                  demanding a new workflow from your media team.
+                </p>
+
+                <div class="btn-row">
+                  <a
+                    class="btn-primary"
+                    :href="windowsDownloadHref"
+                    target="_blank"
+                    rel="noreferrer"
+                    @click="selectPlatform('windows')"
+                  >
+                    <svg
+                      class="btn-icon"
+                      viewBox="0 0 24 24"
+                      aria-hidden="true"
+                      fill="currentColor"
+                    >
+                      <path
+                        d="M2.5 3.5 11 2.2v9.1H2.5V3.5Zm10 8.4V2l10-1.5v11.4H12.5Zm-10 .8H11v9.1l-8.5-1.3v-7.8Zm10 .1h10v11.4L12.5 23v-10.2Z"
+                      ></path>
+                    </svg>
+                    Download for Windows
+                  </a>
+                  <button
+                    class="btn-ghost"
+                    type="button"
+                    @click="showMacComingSoon"
+                  >
+                    <svg
+                      class="btn-icon"
+                      viewBox="0 0 24 24"
+                      aria-hidden="true"
+                      fill="currentColor"
+                    >
+                      <path
+                        d="M15.2 2.1c.2 1.1-.3 2.4-.9 3.2-.7.9-1.8 1.6-2.9 1.5-.2-1.1.3-2.2.9-3 .7-.9 1.9-1.6 2.9-1.7Zm4.2 16.1c-.5 1.1-.8 1.5-1.5 2.5-1 1.4-2.3 3.1-4 3.1-1.5 0-1.9-1-3.9-1-2 0-2.4 1-3.9 1-1.7 0-2.9-1.5-4-2.9C-.2 17.7-.7 11.8 1.3 8.7 2.7 6.4 4.9 5 7 5c1.6 0 2.6 1 3.9 1 1.2 0 2-1 3.9-1 1.9 0 3.9 1 5.3 2.7-3.4 1.9-2.8 6.8-.7 8.3Z"
+                      ></path>
+                    </svg>
+                    Download for Mac
+                  </button>
+                </div>
+              </div>
+
+              <div class="hero-stack">
+                <div class="ambient-card"></div>
+                <div class="preview-card">
+                  <div class="preview-bar">
+                    <span class="pdot pdot-r"></span>
+                    <span class="pdot pdot-y"></span>
+                    <span class="pdot pdot-g"></span>
+                    <span class="preview-title">VerseListener</span>
+                  </div>
+                  <div class="preview-body">
+                    <div>
+                      <div class="queue-label">Live transcript</div>
+                      <div
+                        class="preview-transcript"
+                        v-html="activeMode.heroTranscript"
+                      ></div>
+                    </div>
+                    <div class="preview-queue">
+                      <div class="queue-label">Detected verses</div>
+                      <div class="queue-item">
+                        <div>
+                          <strong>{{ activeMode.heroVerse }}</strong>
+                          <span>{{ activeMode.heroMeta }}</span>
+                        </div>
+                        <button class="queue-send" type="button">Send →</button>
+                      </div>
+                      <div class="queue-item" style="opacity: 0.45">
+                        <div>
+                          <strong>{{ activeMode.secondaryVerse }}</strong>
+                          <span>{{ activeMode.secondaryMeta }}</span>
+                        </div>
+                        <button class="queue-send" type="button">Send →</button>
+                      </div>
+                    </div>
+                    <div class="preview-status">
+                      <span class="status-dot"></span>
+                      <span>{{ activeMode.heroStatus }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="mode-shell">
+              <div class="mode-shell-head">
+                <div class="mode-kicker">Choose your mode</div>
+                <div class="mode-summary">
+                  Start online for the fastest setup, or switch to an offline
+                  path when your booth needs local speech recognition.
+                </div>
+              </div>
+              <div class="mode-grid">
+                <button
+                  v-for="mode in modeOrder"
+                  :key="mode.id"
+                  class="hero-mode"
+                  :class="{ active: currentMode === mode.id }"
+                  type="button"
+                  @click="selectMode(mode.id)"
+                >
+                  <div class="hero-mode-top">
+                    <span class="hero-mode-icon" aria-hidden="true">
+                      <svg
+                        v-if="mode.id === 'online'"
+                        viewBox="0 0 24 24"
+                        fill="currentColor"
+                      >
+                        <path
+                          d="M7.5 18.5h9.7a4.3 4.3 0 0 0 .5-8.58A6 6 0 0 0 6.3 8.2 4.8 4.8 0 0 0 7.5 18.5Zm1.1-5.2 3-3a.75.75 0 0 1 1.08 0l3 3a.75.75 0 0 1-1.06 1.06l-1.72-1.72v3.68a.75.75 0 0 1-1.5 0v-3.68l-1.72 1.72A.75.75 0 0 1 8.6 13.3Z"
+                        ></path>
+                      </svg>
+                      <svg
+                        v-else-if="mode.id === 'vosk'"
+                        viewBox="0 0 24 24"
+                        fill="currentColor"
+                      >
+                        <path
+                          d="M5 4.75A2.75 2.75 0 0 1 7.75 2h8.5A2.75 2.75 0 0 1 19 4.75v14.5A2.75 2.75 0 0 1 16.25 22h-8.5A2.75 2.75 0 0 1 5 19.25V4.75Zm4.25 3.5a.75.75 0 0 0 0 1.5h5.5a.75.75 0 0 0 0-1.5h-5.5Zm0 3.75a.75.75 0 0 0 0 1.5h5.5a.75.75 0 0 0 0-1.5h-5.5Zm0 3.75a.75.75 0 0 0 0 1.5H13a.75.75 0 0 0 0-1.5H9.25Z"
+                        ></path>
+                      </svg>
+                      <svg v-else viewBox="0 0 24 24" fill="currentColor">
+                        <path
+                          d="M12 3.25a2.75 2.75 0 0 1 2.75 2.75v5.75a2.75 2.75 0 1 1-5.5 0V6A2.75 2.75 0 0 1 12 3.25Zm-5 8.25a.75.75 0 0 1 .75.75 4.25 4.25 0 1 0 8.5 0 .75.75 0 0 1 1.5 0A5.76 5.76 0 0 1 12.75 18v1.25h2a.75.75 0 0 1 0 1.5h-5.5a.75.75 0 0 1 0-1.5h2V18A5.76 5.76 0 0 1 6.25 12.25.75.75 0 0 1 7 11.5Z"
+                        ></path>
+                      </svg>
+                    </span>
+                    <span class="hero-mode-title">{{ mode.heroChip }}</span>
+                  </div>
+                  <p class="hero-mode-copy">{{ mode.selectorCopy }}</p>
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="pillars" id="how">
+          <div class="wrap">
+            <div class="section-label">How it Fits</div>
+            <h2>Built to help the operator, not replace the workflow.</h2>
+            <p class="section-copy">
+              It listens on the side, follows the sermon, and pushes the right
+              scripture to the presenting software in one click.
+            </p>
+            <div class="flow-grid">
+              <article
+                :class="['flow-stage', `flow-${step.id}`]"
+                v-for="step in workflow"
+                :key="step.id"
+              >
+                <div class="flow-visual" aria-hidden="true">
+                  <span class="flow-shadow"></span>
+                  <span class="flow-ring"></span>
+                  <span class="flow-disc">
+                    <i
+                      v-if="step.id === 'listen'"
+                      class="fas fa-microphone-alt"
+                    ></i>
+                    <i
+                      v-else-if="step.id === 'understand'"
+                      class="fas fa-brain"
+                    ></i>
+                    <i v-else class="fas fa-hands-helping"></i>
+                  </span>
+                </div>
+                <span class="flow-number">{{ step.number }}</span>
+                <h3>{{ step.title }}</h3>
+                <p>{{ step.copy }}</p>
+              </article>
+            </div>
+          </div>
+        </section>
+
+        <section class="setup" id="setup">
+          <div class="wrap">
+            <div class="section-label">Download and Setup</div>
+            <h2>Pick your platform and speech mode.</h2>
+            <p class="section-copy">
+              Download the base app, extract it, and let the setup panel guide
+              the rest. Online mode uses an OpenAI key. Vosk and Whisper install
+              later from inside the app.
+            </p>
+            <div class="download-strip">
+              <div class="download-strip-head">
+                <div class="download-kicker">{{ downloadSnapshotLabel }}</div>
+                <div
+                  class="download-live"
+                  :class="{ 'is-pending': !downloadTrackingReady }"
+                >
+                  {{ downloadTrackingReady ? "Cloudflare live" : "Cloudflare fallback" }}
+                </div>
+              </div>
+              <div class="download-metrics">
+                <article class="download-metric">
+                  <span class="download-metric-label">Build size</span>
+                  <strong>{{ platformBuildSize }}</strong>
+                  <p>{{ platformBuildSizeCopy }}</p>
+                </article>
+                <article class="download-metric">
+                  <span class="download-metric-label">Downloads</span>
+                  <strong>{{ platformDownloadsDisplay }}</strong>
+                  <p>{{ downloadTrackingCopy }}</p>
+                </article>
+              </div>
+            </div>
+            <div class="setup-grid">
+              <aside class="setup-selector">
+                <h3>Your setup</h3>
+                <p>
+                  Choose a release path. The steps on the right update
+                  instantly.
+                </p>
+
+                <div class="sel-label">Platform</div>
+                <div class="platform-row">
+                  <button
+                    v-for="platform in platformOrder"
+                    :key="platform.id"
+                    class="platform-btn"
+                    :class="{ active: currentPlatform === platform.id }"
+                    type="button"
+                    @click="selectPlatform(platform.id)"
+                  >
+                    {{ platform.label }}
+                  </button>
+                </div>
+
+                <div class="sel-label">Speech mode</div>
+                <div class="mode-cards">
+                  <button
+                    v-for="mode in modeOrder"
+                    :key="mode.id"
+                    class="mode-card"
+                    :class="{ active: currentMode === mode.id }"
+                    type="button"
+                    @click="selectMode(mode.id)"
+                  >
+                    <strong>{{ mode.selectorTitle }}</strong>
+                    <small>{{ mode.selectorCopy }}</small>
+                  </button>
+                </div>
+
+                <div class="selector-note">
+                  <strong
+                    >{{ activePlatform.label }} · {{ activeMode.selectorTitle
+                    }}</strong
+                  >
+                  <p>{{ activeMode.selectorHelper }}</p>
+                </div>
+
+                <a
+                  class="dl-btn"
+                  :href="activeDownloadHref"
+                  target="_blank"
+                  rel="noreferrer"
+                  @click="handleSetupDownload"
+                >
+                  <svg
+                    v-if="currentPlatform === 'windows'"
+                    class="btn-icon"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    fill="currentColor"
+                  >
+                    <path
+                      d="M2.5 3.5 11 2.2v9.1H2.5V3.5Zm10 8.4V2l10-1.5v11.4H12.5Zm-10 .8H11v9.1l-8.5-1.3v-7.8Zm10 .1h10v11.4L12.5 23v-10.2Z"
+                    ></path>
+                  </svg>
+                  <svg
+                    v-else
+                    class="btn-icon"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    fill="currentColor"
+                  >
+                    <path
+                      d="M15.2 2.1c.2 1.1-.3 2.4-.9 3.2-.7.9-1.8 1.6-2.9 1.5-.2-1.1.3-2.2.9-3 .7-.9 1.9-1.6 2.9-1.7Zm4.2 16.1c-.5 1.1-.8 1.5-1.5 2.5-1 1.4-2.3 3.1-4 3.1-1.5 0-1.9-1-3.9-1-2 0-2.4 1-3.9 1-1.7 0-2.9-1.5-4-2.9C-.2 17.7-.7 11.8 1.3 8.7 2.7 6.4 4.9 5 7 5c1.6 0 2.6 1 3.9 1 1.2 0 2-1 3.9-1 1.9 0 3.9 1 5.3 2.7-3.4 1.9-2.8 6.8-.7 8.3Z"
+                    ></path>
+                  </svg>
+                  {{ downloadLabel }}
+                </a>
+              </aside>
+
+              <section class="setup-steps">
+                <div class="step-head">
+                  <span class="step-badge">{{ activeMode.badge }}</span>
+                  <h3>{{ activeMode.stepTitle }}</h3>
+                </div>
+                <p>{{ activeMode.stepIntro }}</p>
+                <div class="steps-list">
+                  <div class="step" v-for="(step, i) in setupSteps" :key="i">
+                    <div class="step-n">{{ i + 1 }}</div>
+                    <p><strong>{{ step.title }}.</strong> {{ step.body }}</p>
+                  </div>
+                </div>
+                <div class="hint">
+                  <strong>{{ activeMode.hintTitle }}</strong> {{
+                  activeMode.hintCopy }}
+                </div>
+                <div class="support">
+                  <strong>{{ activeMode.supportTitle }}</strong>
+                  <p
+                    style="
+                      margin-top: 6px;
+                      font-size: 0.83rem;
+                      color: var(--muted);
+                      line-height: 1.65;
+                    "
+                  >
+                    {{ activeMode.supportIntro }}
+                  </p>
+                  <ul>
+                    <li v-for="item in activeMode.supportItems" :key="item">
+                      {{ item }}
+                    </li>
+                  </ul>
+                  <div class="btn-row">
+                    <a
+                      v-if="activeMode.supportLink"
+                      class="btn-ghost"
+                      :href="activeMode.supportLink.href"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {{ activeMode.supportLink.label }}
+                    </a>
+                    <a
+                      class="btn-ghost"
+                      :href="repoUrl"
+                      target="_blank"
+                      rel="noreferrer"
+                      >Open GitHub repo</a
+                    >
+                  </div>
+                </div>
+              </section>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <footer>
+        <div class="wrap">
+          <div class="footer-shell">
+            <div class="footer-brand">
+              <img
+                class="logo-icon"
+                src="../assets/verseListener_logo.png"
+                alt="VerseListener logo"
+              />
+              <div class="footer-brand-copy">
+                <strong>VerseListener</strong>
+                <span>Always in the wings.</span>
+              </div>
+            </div>
+            <div class="footer-links">
+              <a class="footer-link" href="#top">Top</a>
+              <a class="footer-link" href="#how">How it works</a>
+              <a class="footer-link" href="#setup">Setup</a>
+              <a
+                class="footer-link"
+                :href="repoUrl"
+                target="_blank"
+                rel="noreferrer"
+                >GitHub</a
+              >
+              <a
+                class="footer-link"
+                :href="releaseUrl"
+                target="_blank"
+                rel="noreferrer"
+                >Releases</a
+              >
+            </div>
+          </div>
+        </div>
+      </footer>
+
+      <div
+        v-if="showComingSoonModal"
+        class="coming-soon-backdrop"
+        @click.self="closeComingSoonModal"
+      >
+        <div
+          class="coming-soon-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="coming-soon-title"
+        >
+          <span class="coming-soon-badge">macOS build</span>
+          <h3 id="coming-soon-title">Mac version coming soon</h3>
+          <p>
+            The Windows build is live now. The macOS build is still being
+            packaged and tested so it feels stable when it lands.
+          </p>
+          <div class="coming-soon-actions">
+            <a
+              class="btn-primary"
+              :href="releaseUrl"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Watch releases
+            </a>
+            <button
+              class="btn-ghost"
+              type="button"
+              @click="closeComingSoonModal"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      window.VERSELISTENER_SITE_CONFIG = window.VERSELISTENER_SITE_CONFIG || {
+        metricsBaseUrl: "",
+        windowsBuildSize: "7.9 MB",
+        macBuildSize: "Coming soon",
+      };
+    </script>
+    <script type="module">
+      import {
+        computed,
+        createApp,
+        onMounted,
+        ref,
+      } from "https://unpkg.com/vue@3/dist/vue.esm-browser.prod.js";
+
+      const repoUrl = "https://github.com/anclatechs/verse-listener";
+      const releaseUrl = `${repoUrl}/releases/latest`;
+      const openAiUrl = "https://platform.openai.com/api-keys";
+      const siteConfig = globalThis.VERSELISTENER_SITE_CONFIG || {};
+      const metricsBaseUrl = (siteConfig.metricsBaseUrl || "").replace(
+        /\/$/,
+        "",
+      );
+      const defaultWindowsBuildSize = siteConfig.windowsBuildSize || "7.9 MB";
+      const defaultMacBuildSize = siteConfig.macBuildSize || "Coming soon";
+
+      function metricsUrl(path) {
+        return `${metricsBaseUrl}${path}`;
+      }
+
+      const platforms = {
+        windows: {
+          id: "windows",
+          label: "Windows",
+          archiveLabel: "Windows zip",
+          appLabel: "VerseListener.exe",
+          downloadProxyPath: "/api/downloads/windows",
+          downloadHref: releaseUrl,
+        },
+        mac: {
+          id: "mac",
+          label: "Mac",
+          archiveLabel: "Mac zip",
+          appLabel: "VerseListener.app",
+          downloadProxyPath: "/api/downloads/mac",
+          downloadHref: releaseUrl,
+        },
+      };
+
+      const modes = {
+        online: {
+          id: "online",
+          heroChip: "Online · OpenAI",
+          selectorTitle: "Online · OpenAI",
+          selectorCopy: "Fastest live path. Requires an API key and internet.",
+          selectorHelper:
+            "Use the lean base app, add your OpenAI key once, and keep the service moving.",
+          badge: "Online · OpenAI",
+          stepTitle: "Fast live transcription, minimal setup",
+          stepIntro:
+            "The quickest route to a working live setup. Download, paste your API key, calibrate once, and start listening.",
+          hintTitle: "API key note.",
+          hintCopy:
+            "Paste your OpenAI key into Settings › Speech Model after the app opens. You only do this once.",
+          heroTranscript:
+            '"…and we turn now to <mark>Romans 8:28</mark> — all things work together for good to them that love God…"',
+          heroVerse: "Romans 8:28",
+          heroMeta: "Live queue suggestion",
+          secondaryVerse: "John 3:16",
+          secondaryMeta: "Previous suggestion",
+          heroStatus: "Listening via OpenAI Realtime",
+          supportTitle: "Getting your OpenAI API key",
+          supportIntro: "You only need to do this once per machine.",
+          supportItems: [
+            "Sign in at platform.openai.com.",
+            "Open API keys and create a new secret key.",
+            "Copy it immediately — it won't show again.",
+            "Paste it into VerseListener under Settings › Speech Model.",
+          ],
+          supportLink: { href: openAiUrl, label: "Open OpenAI API keys" },
+        },
+        vosk: {
+          id: "vosk",
+          heroChip: "Offline · Vosk",
+          selectorTitle: "Offline · Vosk",
+          selectorCopy:
+            "Lighter local footprint. No API key needed after install.",
+          selectorHelper:
+            "Install Vosk from inside VerseListener when the booth needs an offline path.",
+          badge: "Offline · Vosk",
+          stepTitle: "Offline speech with a lighter local footprint",
+          stepIntro:
+            "Vosk is not in the base app. Install it from the add-ons screen, restart once, and work fully offline.",
+          hintTitle: "Offline note.",
+          hintCopy:
+            "Internet is only needed for the one-time in-app add-on download. After that, Vosk runs entirely on-device.",
+          heroTranscript:
+            '"…the Lord is my shepherd; I shall not want — <mark>Psalm 23:1</mark> — he leads me beside still waters…"',
+          heroVerse: "Psalm 23:1",
+          heroMeta: "Context-backed suggestion",
+          secondaryVerse: "Psalm 23:2",
+          secondaryMeta: "Adjacent verse",
+          heroStatus: "Listening via Vosk (offline)",
+          supportTitle: "How the Vosk add-on works",
+          supportIntro:
+            "The base app stays lean; Vosk is pulled in only when needed.",
+          supportItems: [
+            "Open Settings and go to Add-ons.",
+            "Choose Vosk and let the install finish.",
+            "Restart VerseListener.",
+            "Switch the speech backend to Vosk in Settings › Speech Model.",
+          ],
+          supportLink: null,
+        },
+        whisper: {
+          id: "whisper",
+          heroChip: "Offline · Whisper",
+          selectorTitle: "Offline · Whisper",
+          selectorCopy:
+            "Stronger local recognition. No API key needed after install.",
+          selectorHelper:
+            "Use the base app first, then install faster-whisper for richer offline recognition.",
+          badge: "Offline · Whisper",
+          stepTitle: "Offline speech with stronger local recognition",
+          stepIntro:
+            "Whisper stays optional so the base app stays slim until your team decides it needs the stronger engine.",
+          hintTitle: "First-install note.",
+          hintCopy:
+            "The Whisper model download is ~250 MB and happens once. After that it runs fully offline.",
+          heroTranscript:
+            '"…by faith Abraham, when he was called, obeyed — <mark>Hebrews 11:8</mark> — not knowing where he was going…"',
+          heroVerse: "Hebrews 11:8",
+          heroMeta: "Whisper-backed suggestion",
+          secondaryVerse: "Hebrews 11:1",
+          secondaryMeta: "Chapter context",
+          heroStatus: "Listening via Whisper (offline)",
+          supportTitle: "How the Whisper add-on works",
+          supportIntro:
+            "Whisper is installed from inside VerseListener only when your team wants the stronger path.",
+          supportItems: [
+            "Open Settings and go to Add-ons.",
+            "Install faster-whisper and wait for the model download.",
+            "Restart VerseListener.",
+            "Switch the speech backend to Whisper in Settings › Speech Model.",
+          ],
+          supportLink: null,
+        },
+      };
+
+      const workflow = [
+        {
+          id: "listen",
+          number: "01",
+          title: "Listen",
+          copy: "Stays open beside the service, captures speech in real time, and keeps a usable transcript ready for the operator.",
+        },
+        {
+          id: "understand",
+          number: "02",
+          title: "Build Context",
+          copy: "Connects spoken references, paraphrases, and sermon flow so the likely passage becomes clear before the moment slips by.",
+        },
+        {
+          id: "handoff",
+          number: "03",
+          title: "Send to Screen",
+          copy: "Pushes the right suggestion back into EasyWorship, ProPresenter, or any scripture presentation software your team already trusts.",
+        },
+      ];
+
+      createApp({
+        setup() {
+          const currentPlatform = ref("windows");
+          const currentMode = ref("online");
+          const showComingSoonModal = ref(false);
+          const downloadTrackingReady = ref(false);
+          const downloadStats = ref({
+            windowsBuildSize: defaultWindowsBuildSize,
+            macBuildSize: defaultMacBuildSize,
+            windowsDownloads: null,
+            macDownloads: null,
+          });
+          const platformOrder = Object.values(platforms);
+          const modeOrder = Object.values(modes);
+          const activePlatform = computed(
+            () => platforms[currentPlatform.value],
+          );
+          const activeMode = computed(() => modes[currentMode.value]);
+          const downloadLabel = computed(
+            () => `Download for ${activePlatform.value.label}`,
+          );
+          const windowsDownloadHref = computed(() =>
+            metricsUrl(platforms.windows.downloadProxyPath),
+          );
+          const activeDownloadHref = computed(() =>
+            activePlatform.value.id === "windows"
+              ? windowsDownloadHref.value
+              : "#",
+          );
+          const downloadSnapshotLabel = computed(
+            () => `${activePlatform.value.label} release snapshot`,
+          );
+          const platformBuildSize = computed(() =>
+            activePlatform.value.id === "windows"
+              ? downloadStats.value.windowsBuildSize || defaultWindowsBuildSize
+              : downloadStats.value.macBuildSize || defaultMacBuildSize,
+          );
+          const platformBuildSizeCopy = computed(() =>
+            activePlatform.value.id === "windows"
+              ? "Lean base app before optional offline add-ons like Vosk or Whisper."
+              : "Mac build details can live here as soon as that packaged release is ready.",
+          );
+          const platformDownloadsRaw = computed(() =>
+            activePlatform.value.id === "windows"
+              ? downloadStats.value.windowsDownloads
+              : downloadStats.value.macDownloads,
+          );
+          const platformDownloadsDisplay = computed(() => {
+            if (platformDownloadsRaw.value == null) {
+              return "—";
+            }
+            return new Intl.NumberFormat("en-US").format(
+              platformDownloadsRaw.value,
+            );
+          });
+          const downloadTrackingCopy = computed(() =>
+            downloadTrackingReady.value
+              ? `Increments whenever the ${activePlatform.value.label} download route redirects through Cloudflare.`
+              : "Tracking is not connected yet, so the button falls back to the GitHub release link for now.",
+          );
+
+          const setupSteps = computed(() => {
+            const p = activePlatform.value,
+              m = activeMode.value;
+            const steps = [
+              {
+                title: "Download",
+                body: `Download the ${p.archiveLabel} from GitHub Releases and extract it.`,
+              },
+              {
+                title: "Open",
+                body: `Open ${p.appLabel}. Allow it through any first-run OS prompt.`,
+              },
+              {
+                title: "Split",
+                body: "Keep VerseListener and your presentation software side by side during first setup.",
+              },
+            ];
+            if (m.id === "online") {
+              steps.push({
+                title: "Add key",
+                body: "Choose Quick Setup and paste your OpenAI API key into Settings › Speech Model.",
+              });
+            } else {
+              steps.push({
+                title: "Add-on",
+                body: `Choose Offline Setup, then install ${m.id === "vosk" ? "Vosk" : "faster-whisper"} from Settings › Add-ons.`,
+              });
+            }
+            steps.push(
+              {
+                title: "Calibrate",
+                body: "Run the Calibrate action so VerseListener knows where to target your presentation window.",
+              },
+              {
+                title: "Go live",
+                body: "Start listening, review verse suggestions in the queue, and send the right scripture when the moment comes.",
+              },
+            );
+            return steps;
+          });
+
+          async function loadDownloadStats() {
+            try {
+              const response = await fetch(metricsUrl("/api/downloads/stats"), {
+                headers: { Accept: "application/json" },
+              });
+              if (!response.ok) {
+                throw new Error(`stats request failed with ${response.status}`);
+              }
+              const payload = await response.json();
+              downloadStats.value = {
+                windowsBuildSize:
+                  payload.windowsBuildSize || defaultWindowsBuildSize,
+                macBuildSize: payload.macBuildSize || defaultMacBuildSize,
+                windowsDownloads:
+                  typeof payload.windowsDownloads === "number"
+                    ? payload.windowsDownloads
+                    : null,
+                macDownloads:
+                  typeof payload.macDownloads === "number"
+                    ? payload.macDownloads
+                    : null,
+              };
+              downloadTrackingReady.value = true;
+            } catch (error) {
+              console.warn("Download metrics unavailable; using release fallback.", error);
+            }
+          }
+
+          function selectPlatform(id, scroll = false) {
+            currentPlatform.value = id;
+            if (scroll)
+              document
+                .getElementById("setup")
+                ?.scrollIntoView({ behavior: "smooth" });
+          }
+          function selectMode(id) {
+            currentMode.value = id;
+          }
+          function showMacComingSoon() {
+            currentPlatform.value = "mac";
+            showComingSoonModal.value = true;
+          }
+          function closeComingSoonModal() {
+            showComingSoonModal.value = false;
+          }
+          function handleSetupDownload(event) {
+            if (activePlatform.value.id === "mac") {
+              event.preventDefault();
+              showMacComingSoon();
+            }
+          }
+
+          onMounted(() => {
+            void loadDownloadStats();
+          });
+
+          return {
+            repoUrl,
+            releaseUrl,
+            workflow,
+            platformOrder,
+            modeOrder,
+            currentPlatform,
+            currentMode,
+            activePlatform,
+            activeMode,
+            downloadLabel,
+            windowsDownloadHref,
+            activeDownloadHref,
+            downloadTrackingReady,
+            downloadSnapshotLabel,
+            platformBuildSize,
+            platformBuildSizeCopy,
+            platformDownloadsDisplay,
+            downloadTrackingCopy,
+            showComingSoonModal,
+            setupSteps,
+            selectPlatform,
+            selectMode,
+            showMacComingSoon,
+            closeComingSoonModal,
+            handleSetupDownload,
+          };
+        },
+      }).mount("#app");
+    </script>
+  </body>
+</html>
